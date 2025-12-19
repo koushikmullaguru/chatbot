@@ -1,6 +1,7 @@
 from typing import List, Optional, Dict, Any
 from datetime import datetime
-from pydantic import BaseModel
+from uuid import UUID
+from pydantic import BaseModel, field_validator
 
 
 # Assessment schemas
@@ -30,6 +31,13 @@ class AssessmentUpdate(BaseModel):
 class AssessmentResponse(AssessmentBase):
     id: str
     created_by: str
+
+    @field_validator('id', 'class_id', 'subject_id', 'topic_id', mode='before')
+    @classmethod
+    def convert_uuid_to_str(cls, v: Any) -> Any:
+        if isinstance(v, UUID):
+            return str(v)
+        return v
 
     class Config:
         from_attributes = True
@@ -63,6 +71,13 @@ class QuestionUpdate(BaseModel):
 class QuestionResponse(QuestionBase):
     id: str
 
+    @field_validator('id', 'assessment_id', mode='before')
+    @classmethod
+    def convert_uuid_to_str(cls, v: Any) -> Any:
+        if isinstance(v, UUID):
+            return str(v)
+        return v
+
     class Config:
         from_attributes = True
 
@@ -89,6 +104,13 @@ class AssessmentResultUpdate(BaseModel):
 class AssessmentResultResponse(AssessmentResultBase):
     id: str
 
+    @field_validator('id', 'assessment_id', 'student_profile_id', mode='before')
+    @classmethod
+    def convert_uuid_to_str(cls, v: Any) -> Any:
+        if isinstance(v, UUID):
+            return str(v)
+        return v
+
     class Config:
         from_attributes = True
 
@@ -113,6 +135,13 @@ class StudentAnswerUpdate(BaseModel):
 class StudentAnswerResponse(StudentAnswerBase):
     id: str
     created_at: datetime
+
+    @field_validator('id', 'assessment_result_id', 'question_id', mode='before')
+    @classmethod
+    def convert_uuid_to_str(cls, v: Any) -> Any:
+        if isinstance(v, UUID):
+            return str(v)
+        return v
 
     class Config:
         from_attributes = True

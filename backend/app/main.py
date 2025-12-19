@@ -1,14 +1,13 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy.orm import Session
 
 from .core.config import settings
-from .core.database import engine, get_db
+from .core.database import engine, Base
 from .api.main import api_router
 from .models import *  # Import all models to create tables
 
 # Create database tables
-models.Base.metadata.create_all(bind=engine)
+Base.metadata.create_all(bind=engine)
 
 app = FastAPI(
     title="AI School Chat Application",

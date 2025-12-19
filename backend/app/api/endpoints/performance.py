@@ -3,15 +3,15 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 
-from ..core.database import get_db
-from ..core.security import get_current_user
-from ..models.user_management import User, StudentProfile, ParentStudentRelation
-from ..models.planner_performance import (
+from ...core.database import get_db
+from ...api.deps import get_current_user
+from ...models.user_management import User, StudentProfile, ParentStudentRelation
+from ...models.planner_performance import (
     ReportCard, SubjectGrade, StudySession, Task
 )
-from ..schemas.planner_performance import (
+from ...schemas.planner_performance import (
     StudentPerformanceReport, TeacherInsights, ParentDashboard,
-    ReportCardWithSubjectGrades
+    ReportCardWithSubjectGrades, WeeklyPerformanceMetrics
 )
 
 router = APIRouter()
@@ -90,7 +90,6 @@ def get_student_performance(
     
     # TODO: Calculate weekly metrics
     # For now, return placeholder data
-    from ..schemas.planner_performance import WeeklyPerformanceMetrics
     weekly_metrics = WeeklyPerformanceMetrics(
         total_study_time=120,  # 2 hours
         average_performance_score=75.5,

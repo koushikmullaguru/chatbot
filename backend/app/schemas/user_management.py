@@ -1,6 +1,7 @@
-from typing import List, Optional
+from typing import List, Optional, Any
 from datetime import datetime
-from pydantic import BaseModel, EmailStr
+from uuid import UUID
+from pydantic import BaseModel, EmailStr, field_validator
 
 
 # User schemas
@@ -35,6 +36,13 @@ class UserResponse(UserBase):
     created_at: datetime
     updated_at: datetime
 
+    @field_validator('id', mode='before')
+    @classmethod
+    def convert_uuid_to_str(cls, v: Any) -> Any:
+        if isinstance(v, UUID):
+            return str(v)
+        return v
+
     class Config:
         from_attributes = True
 
@@ -46,10 +54,19 @@ class StudentProfileBase(BaseModel):
     avatar: Optional[str] = None
     pin: str
     roll_number: str
+    date_of_birth: Optional[datetime] = None
+    blood_group: Optional[str] = None
+    admission_date: Optional[datetime] = None
+    email: Optional[EmailStr] = None
+    phone: Optional[str] = None
+    address: Optional[str] = None
+    parent_name: Optional[str] = None
+    parent_email: Optional[EmailStr] = None
+    parent_phone: Optional[str] = None
 
 
 class StudentProfileCreate(StudentProfileBase):
-    user_id: str
+    user_id: UUID
 
 
 class StudentProfileUpdate(BaseModel):
@@ -58,6 +75,15 @@ class StudentProfileUpdate(BaseModel):
     avatar: Optional[str] = None
     pin: Optional[str] = None
     roll_number: Optional[str] = None
+    date_of_birth: Optional[datetime] = None
+    blood_group: Optional[str] = None
+    admission_date: Optional[datetime] = None
+    email: Optional[EmailStr] = None
+    phone: Optional[str] = None
+    address: Optional[str] = None
+    parent_name: Optional[str] = None
+    parent_email: Optional[EmailStr] = None
+    parent_phone: Optional[str] = None
 
 
 class StudentProfileResponse(StudentProfileBase):
@@ -66,14 +92,21 @@ class StudentProfileResponse(StudentProfileBase):
     created_at: datetime
     updated_at: datetime
 
+    @field_validator('id', 'user_id', mode='before')
+    @classmethod
+    def convert_uuid_to_str(cls, v: Any) -> Any:
+        if isinstance(v, UUID):
+            return str(v)
+        return v
+
     class Config:
         from_attributes = True
 
 
 # Parent Student Relation schemas
 class ParentStudentRelationBase(BaseModel):
-    parent_id: str
-    student_profile_id: str
+    parent_id: UUID
+    student_profile_id: UUID
 
 
 class ParentStudentRelationCreate(ParentStudentRelationBase):
@@ -83,6 +116,13 @@ class ParentStudentRelationCreate(ParentStudentRelationBase):
 class ParentStudentRelationResponse(ParentStudentRelationBase):
     id: str
     created_at: datetime
+
+    @field_validator('id', mode='before')
+    @classmethod
+    def convert_uuid_to_str(cls, v: Any) -> Any:
+        if isinstance(v, UUID):
+            return str(v)
+        return v
 
     class Config:
         from_attributes = True
@@ -94,13 +134,20 @@ class StudentInterestBase(BaseModel):
 
 
 class StudentInterestCreate(StudentInterestBase):
-    student_profile_id: str
+    student_profile_id: UUID
 
 
 class StudentInterestResponse(StudentInterestBase):
     id: str
     student_profile_id: str
     created_at: datetime
+
+    @field_validator('id', 'student_profile_id', mode='before')
+    @classmethod
+    def convert_uuid_to_str(cls, v: Any) -> Any:
+        if isinstance(v, UUID):
+            return str(v)
+        return v
 
     class Config:
         from_attributes = True
@@ -114,13 +161,20 @@ class StudentAchievementBase(BaseModel):
 
 
 class StudentAchievementCreate(StudentAchievementBase):
-    student_profile_id: str
+    student_profile_id: UUID
 
 
 class StudentAchievementResponse(StudentAchievementBase):
     id: str
     student_profile_id: str
     created_at: datetime
+
+    @field_validator('id', 'student_profile_id', mode='before')
+    @classmethod
+    def convert_uuid_to_str(cls, v: Any) -> Any:
+        if isinstance(v, UUID):
+            return str(v)
+        return v
 
     class Config:
         from_attributes = True

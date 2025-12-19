@@ -1,2 +1,8 @@
 src/node_modules/
 backend/.env
+backend/app/_pycache_/
+backend/app/api/_pycache_/
+backend/app/api/endpoints/_pycache_/
+backend/app/core/_pycache_/
+backend/app/models/_pycache_/
+backend/app/schemas/_pycache_/

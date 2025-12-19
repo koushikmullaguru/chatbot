@@ -9,12 +9,15 @@ import sys
 # Add the app directory to the Python path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
+# Import settings to get host and port
+from app.core.config import settings
+
 if __name__ == "__main__":
     # Run the FastAPI application
     uvicorn.run(
         "app.main:app",
-        host="0.0.0.0",
-        port=8000,
+        host=settings.HOST,
+        port=settings.PORT,
         reload=True,
         log_level="info"
     )

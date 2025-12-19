@@ -3,10 +3,11 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 
-from ..core.database import get_db
-from ..core.security import get_current_user
-from ..models.user_management import User
-from ..models.academic_hierarchy import Class, Subject, Topic
+from ...core.database import get_db
+from ...api.deps import get_current_user
+from ...core.ai_service import ai_service
+from ...models.user_management import User
+from ...models.academic_hierarchy import Class, Subject, Chapter, Topic
 
 router = APIRouter()
 
@@ -14,7 +15,7 @@ router = APIRouter()
 class QuizGenerateRequest(BaseModel):
     class_id: str
     subject_id: str
-    topic_id: str
+    chapter_id: str
     difficulty: str = "medium"
     num_questions: int = 10
     question_types: List[str] = ["multiple-choice"]
@@ -23,6 +24,7 @@ class QuizGenerateRequest(BaseModel):
 class ExamGenerateRequest(BaseModel):
     class_id: str
     subject_id: str
+    chapter_ids: List[str]
     duration: int
     total_marks: int
     sections: List[Dict[str, Any]]
@@ -51,7 +53,7 @@ class ContentGenerateRequest(BaseModel):
 
 
 @router.post("/quiz")
-def generate_quiz(
+async def generate_quiz(
     request: QuizGenerateRequest,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
@@ -75,29 +77,75 @@ def generate_quiz(
             detail="Subject not found"
         )
     
-    # Verify topic exists
-    topic = db.query(Topic).filter(Topic.id == request.topic_id).first()
-    if not topic:
+    # Verify chapter exists
+    chapter = db.query(Chapter).filter(Chapter.id == request.chapter_id).first()
+    if not chapter:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Topic not found"
+            detail="Chapter not found"
         )
     
-    # TODO: Integrate with AI service to generate quiz
-    # For now, return a placeholder response
-    return {
-        "message": "Quiz generation request received",
-        "class": class_obj.name,
-        "subject": subject.name,
-        "topic": topic.name,
-        "difficulty": request.difficulty,
-        "num_questions": request.num_questions,
-        "status": "processing"
-    }
+    # Generate quiz using AI service
+    quiz_result = await ai_service.generate_quiz(
+        subject=subject.name,
+        topic=chapter.name,
+        difficulty=request.difficulty,
+        num_questions=request.num_questions,
+        question_types=request.question_types
+    )
+    
+    # Check for errors
+    if "error" in quiz_result:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to generate quiz: {quiz_result['error']}"
+        )
+    
+    # Extract the questions from the AI response
+    try:
+        # Get the content from the first choice
+        content = quiz_result.get("choices", [{}])[0].get("message", {}).get("content", "")
+        
+        # Extract JSON from the content (it might be wrapped in ```json\n```)
+        import re
+        json_match = re.search(r'```json\n(.*?)\n```', content, re.DOTALL)
+        if json_match:
+            json_content = json_match.group(1)
+        else:
+            # If no markdown formatting, try to parse the entire content as JSON
+            json_content = content
+        
+        # Parse the JSON to get the questions
+        import json
+        questions_data = json.loads(json_content)
+        questions = questions_data.get("questions", [])
+        
+        # Return only the questions
+        return {
+            "message": "Quiz generated successfully",
+            "class": class_obj.name,
+            "subject": subject.name,
+            "chapter": chapter.name,
+            "difficulty": request.difficulty,
+            "num_questions": len(questions),
+            "questions": questions
+        }
+    except (KeyError, json.JSONDecodeError, IndexError) as e:
+        # If parsing fails, return the original response with an error message
+        return {
+            "message": "Quiz generated but there was an error parsing the questions",
+            "error": str(e),
+            "class": class_obj.name,
+            "subject": subject.name,
+            "chapter": chapter.name,
+            "difficulty": request.difficulty,
+            "num_questions": request.num_questions,
+            "raw_response": quiz_result
+        }
 
 
 @router.post("/exam")
-def generate_exam(
+async def generate_exam(
     request: ExamGenerateRequest,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
@@ -121,21 +169,35 @@ def generate_exam(
             detail="Subject not found"
         )
     
-    # TODO: Integrate with AI service to generate exam
-    # For now, return a placeholder response
+    # Generate exam using AI service
+    exam_result = await ai_service.generate_exam(
+        class_name=class_obj.name,
+        subject=subject.name,
+        duration=request.duration,
+        total_marks=request.total_marks,
+        sections=request.sections
+    )
+    
+    # Check for errors
+    if "error" in exam_result:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to generate exam: {exam_result['error']}"
+        )
+    
+    # Return the generated exam
     return {
-        "message": "Exam generation request received",
+        "message": "Exam generated successfully",
         "class": class_obj.name,
         "subject": subject.name,
         "duration": request.duration,
         "total_marks": request.total_marks,
-        "sections": request.sections,
-        "status": "processing"
+        "exam_data": exam_result
     }
 
 
 @router.post("/revision")
-def generate_revision(
+async def generate_revision(
     request: RevisionGenerateRequest,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
@@ -151,19 +213,36 @@ def generate_revision(
             detail="Subject not found"
         )
     
-    # TODO: Integrate with AI service to generate revision materials
-    # For now, return a placeholder response
+    # Get topic names
+    topics = db.query(Topic).filter(Topic.id.in_(request.topic_ids)).all()
+    topic_names = [topic.name for topic in topics]
+    
+    # Generate revision materials using AI service
+    revision_result = await ai_service.generate_revision_notes(
+        subject=subject.name,
+        topics=topic_names,
+        revision_type=request.revision_type
+    )
+    
+    # Check for errors
+    if "error" in revision_result:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to generate revision materials: {revision_result['error']}"
+        )
+    
+    # Return the generated revision materials
     return {
-        "message": "Revision generation request received",
+        "message": "Revision materials generated successfully",
         "subject": subject.name,
         "topic_ids": request.topic_ids,
         "revision_type": request.revision_type,
-        "status": "processing"
+        "revision_data": revision_result
     }
 
 
 @router.post("/homework")
-def generate_homework(
+async def generate_homework(
     request: HomeworkGenerateRequest,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
@@ -195,21 +274,36 @@ def generate_homework(
             detail="Topic not found"
         )
     
-    # TODO: Integrate with AI service to generate homework
-    # For now, return a placeholder response
+    # Generate homework using AI service
+    homework_result = await ai_service.generate_homework(
+        class_name=class_obj.name,
+        subject=subject.name,
+        topic=topic.name,
+        difficulty=request.difficulty,
+        num_questions=request.num_questions
+    )
+    
+    # Check for errors
+    if "error" in homework_result:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to generate homework: {homework_result['error']}"
+        )
+    
+    # Return the generated homework
     return {
-        "message": "Homework generation request received",
+        "message": "Homework generated successfully",
         "class": class_obj.name,
         "subject": subject.name,
         "topic": topic.name,
         "difficulty": request.difficulty,
         "num_questions": request.num_questions,
-        "status": "processing"
+        "homework_data": homework_result
     }
 
 
 @router.post("/content/generate-notes")
-def generate_notes(
+async def generate_notes(
     request: ContentGenerateRequest,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
@@ -233,13 +327,34 @@ def generate_notes(
             detail="Subject not found"
         )
     
-    # TODO: Integrate with AI service to generate notes
-    # For now, return a placeholder response
+    # Get topic name if provided
+    topic_name = ""
+    if "topic_id" in request.additional_info and request.additional_info["topic_id"]:
+        topic = db.query(Topic).filter(Topic.id == request.additional_info["topic_id"]).first()
+        if topic:
+            topic_name = topic.name
+    
+    # Generate teacher notes using AI service
+    notes_result = await ai_service.generate_teacher_notes(
+        class_name=class_obj.name,
+        subject=subject.name,
+        topic=topic_name,
+        additional_info=request.additional_info
+    )
+    
+    # Check for errors
+    if "error" in notes_result:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to generate teacher notes: {notes_result['error']}"
+        )
+    
+    # Return the generated notes
     return {
-        "message": "Notes generation request received",
+        "message": "Teacher notes generated successfully",
         "class": class_obj.name,
         "subject": subject.name,
         "content_type": request.content_type,
         "additional_info": request.additional_info,
-        "status": "processing"
+        "notes_data": notes_result
     }

@@ -41,7 +41,7 @@ class User(Base):
     parent_student_relations = relationship("ParentStudentRelation", foreign_keys="ParentStudentRelation.parent_id", back_populates="parent")
     chat_sessions = relationship("ChatSession", back_populates="user")
     teacher_content_units = relationship("TeacherContentUnit", back_populates="created_by")
-    assessments = relationship("Assessment", back_populates="created_by")
+    assessments = relationship("Assessment", back_populates="created_by_user")
     user_sessions = relationship("UserSession", back_populates="user")
 
 
@@ -55,6 +55,15 @@ class StudentProfile(Base):
     avatar = Column(String(255))
     pin = Column(String(10))
     roll_number = Column(String(50))
+    date_of_birth = Column(Date)
+    blood_group = Column(String(5))
+    admission_date = Column(Date)
+    email = Column(String(255))
+    phone = Column(String(20))
+    address = Column(Text)
+    parent_name = Column(String(100))
+    parent_email = Column(String(255))
+    parent_phone = Column(String(20))
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     

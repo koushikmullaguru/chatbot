@@ -2,11 +2,11 @@ from typing import Any, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 
-from ..core.database import get_db
-from ..core.security import get_current_user
-from ..models.user_management import User
-from ..models.academic_hierarchy import Class, Section, Subject, Chapter, Topic, SubTopic
-from ..schemas.academic_hierarchy import (
+from ...core.database import get_db
+from ...api.deps import get_current_user
+from ...models.user_management import User
+from ...models.academic_hierarchy import Class, Section, Subject, Chapter, Topic, SubTopic
+from ...schemas.academic_hierarchy import (
     ClassResponse, SectionResponse, SubjectResponse, 
     ChapterResponse, TopicResponse, SubTopicResponse,
     ClassWithSubjects, SubjectWithChapters, ChapterWithTopics, TopicWithSubTopics

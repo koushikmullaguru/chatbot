@@ -2,10 +2,19 @@ from datetime import datetime, timedelta
 from typing import Optional, Union, Any
 from jose import jwt
 from passlib.context import CryptContext
+from fastapi import Depends, HTTPException, status, Security
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from sqlalchemy.orm import Session
+from uuid import UUID
 from .config import settings
+from .database import get_db
+from ..models.user_management import User
 
 # Password context
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+# HTTP Bearer scheme
+security = HTTPBearer()
 
 
 def create_access_token(
@@ -58,6 +67,38 @@ def verify_token(token: str) -> Optional[str]:
         return payload.get("sub")
     except jwt.JWTError:
         return None
+
+
+def get_current_user(
+    credentials: HTTPAuthorizationCredentials = Security(security),
+    db: Session = Depends(get_db)
+) -> User:
+    """
+    Get the current user from the Bearer token
+    """
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    
+    # Verify token
+    token = credentials.credentials
+    user_id = verify_token(token)
+    if user_id is None:
+        raise credentials_exception
+    
+    # Get user from database
+    try:
+        user_uuid = UUID(user_id)
+    except ValueError:
+        raise credentials_exception
+    
+    user = db.query(User).filter(User.id == user_uuid).first()
+    if user is None:
+        raise credentials_exception
+    
+    return user
 
 
 def generate_otp(length: int = 6) -> str:

@@ -1,6 +1,7 @@
-from typing import List, Optional
+from typing import List, Optional, Any
 from datetime import datetime, date
-from pydantic import BaseModel
+from uuid import UUID
+from pydantic import BaseModel, field_validator
 
 
 # Task schemas
@@ -27,6 +28,13 @@ class TaskUpdate(BaseModel):
 class TaskResponse(TaskBase):
     id: str
 
+    @field_validator('id', 'student_profile_id', 'subject_id', mode='before')
+    @classmethod
+    def convert_uuid_to_str(cls, v: Any) -> Any:
+        if isinstance(v, UUID):
+            return str(v)
+        return v
+
     class Config:
         from_attributes = True
 
@@ -52,6 +60,13 @@ class ReportCardUpdate(BaseModel):
 class ReportCardResponse(ReportCardBase):
     id: str
 
+    @field_validator('id', 'student_profile_id', mode='before')
+    @classmethod
+    def convert_uuid_to_str(cls, v: Any) -> Any:
+        if isinstance(v, UUID):
+            return str(v)
+        return v
+
     class Config:
         from_attributes = True
 
@@ -75,6 +90,13 @@ class SubjectGradeUpdate(BaseModel):
 
 class SubjectGradeResponse(SubjectGradeBase):
     id: str
+
+    @field_validator('id', 'report_card_id', 'subject_id', mode='before')
+    @classmethod
+    def convert_uuid_to_str(cls, v: Any) -> Any:
+        if isinstance(v, UUID):
+            return str(v)
+        return v
 
     class Config:
         from_attributes = True
@@ -100,6 +122,13 @@ class StudySessionUpdate(BaseModel):
 
 class StudySessionResponse(StudySessionBase):
     id: str
+
+    @field_validator('id', 'student_profile_id', 'subject_id', mode='before')
+    @classmethod
+    def convert_uuid_to_str(cls, v: Any) -> Any:
+        if isinstance(v, UUID):
+            return str(v)
+        return v
 
     class Config:
         from_attributes = True

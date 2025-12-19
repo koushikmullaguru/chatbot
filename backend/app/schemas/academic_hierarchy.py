@@ -1,6 +1,7 @@
-from typing import List, Optional
+from typing import List, Optional, Any
 from datetime import datetime
-from pydantic import BaseModel
+from uuid import UUID
+from pydantic import BaseModel, field_validator
 
 
 # Class schemas
@@ -14,6 +15,13 @@ class ClassCreate(ClassBase):
 
 class ClassResponse(ClassBase):
     id: str
+
+    @field_validator('id', mode='before')
+    @classmethod
+    def convert_uuid_to_str(cls, v: Any) -> Any:
+        if isinstance(v, UUID):
+            return str(v)
+        return v
 
     class Config:
         from_attributes = True
@@ -32,6 +40,13 @@ class SectionCreate(SectionBase):
 class SectionResponse(SectionBase):
     id: str
 
+    @field_validator('id', mode='before')
+    @classmethod
+    def convert_uuid_to_str(cls, v: Any) -> Any:
+        if isinstance(v, UUID):
+            return str(v)
+        return v
+
     class Config:
         from_attributes = True
 
@@ -48,6 +63,13 @@ class SubjectCreate(SubjectBase):
 
 class SubjectResponse(SubjectBase):
     id: str
+
+    @field_validator('id', 'class_id', mode='before')
+    @classmethod
+    def convert_uuid_to_str(cls, v: Any) -> Any:
+        if isinstance(v, UUID):
+            return str(v)
+        return v
 
     class Config:
         from_attributes = True
@@ -66,6 +88,13 @@ class ChapterCreate(ChapterBase):
 class ChapterResponse(ChapterBase):
     id: str
 
+    @field_validator('id', 'subject_id', mode='before')
+    @classmethod
+    def convert_uuid_to_str(cls, v: Any) -> Any:
+        if isinstance(v, UUID):
+            return str(v)
+        return v
+
     class Config:
         from_attributes = True
 
@@ -83,6 +112,13 @@ class TopicCreate(TopicBase):
 class TopicResponse(TopicBase):
     id: str
 
+    @field_validator('id', 'chapter_id', mode='before')
+    @classmethod
+    def convert_uuid_to_str(cls, v: Any) -> Any:
+        if isinstance(v, UUID):
+            return str(v)
+        return v
+
     class Config:
         from_attributes = True
 
@@ -99,6 +135,13 @@ class SubTopicCreate(SubTopicBase):
 
 class SubTopicResponse(SubTopicBase):
     id: str
+
+    @field_validator('id', 'topic_id', mode='before')
+    @classmethod
+    def convert_uuid_to_str(cls, v: Any) -> Any:
+        if isinstance(v, UUID):
+            return str(v)
+        return v
 
     class Config:
         from_attributes = True

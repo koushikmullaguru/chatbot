@@ -2,11 +2,11 @@ from typing import Any, List
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from ..core.database import get_db
-from ..core.security import get_current_user
-from ..models.user_management import User, StudentProfile, ParentStudentRelation
-from ..models.assessments import Assessment, AssessmentResult, StudentAnswer, Question
-from ..schemas.assessments import (
+from ...core.database import get_db
+from ...api.deps import get_current_user
+from ...models.user_management import User, StudentProfile, ParentStudentRelation
+from ...models.assessments import Assessment, AssessmentResult, StudentAnswer, Question
+from ...schemas.assessments import (
     AssessmentCreate, AssessmentResponse, AssessmentWithQuestions,
     AssessmentResultCreate, AssessmentResultResponse, AssessmentResultWithStudentAnswers,
     StudentAnswerCreate, StudentAnswerResponse

@@ -1,6 +1,7 @@
 from typing import List, Optional, Dict, Any
 from datetime import datetime
-from pydantic import BaseModel
+from uuid import UUID
+from pydantic import BaseModel, field_validator
 
 
 # Chat Session schemas
@@ -25,6 +26,13 @@ class ChatSessionResponse(ChatSessionBase):
     created_at: datetime
     updated_at: datetime
 
+    @field_validator('id', 'user_id', 'student_profile_id', mode='before')
+    @classmethod
+    def convert_uuid_to_str(cls, v: Any) -> Any:
+        if isinstance(v, UUID):
+            return str(v)
+        return v
+
     class Config:
         from_attributes = True
 
@@ -44,6 +52,13 @@ class MessageResponse(MessageBase):
     id: str
     chat_session_id: str
     timestamp: datetime
+
+    @field_validator('id', 'chat_session_id', mode='before')
+    @classmethod
+    def convert_uuid_to_str(cls, v: Any) -> Any:
+        if isinstance(v, UUID):
+            return str(v)
+        return v
 
     class Config:
         from_attributes = True
