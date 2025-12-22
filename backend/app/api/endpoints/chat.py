@@ -23,9 +23,11 @@ def get_chat_sessions(
     """
     List all chat sessions for the user.
     """
+    print(f"Getting chat sessions for user: {current_user.id}")
     chat_sessions = db.query(ChatSession).filter(
         ChatSession.user_id == current_user.id
     ).all()
+    print(f"Found {len(chat_sessions)} chat sessions for user {current_user.id}")
     
     return chat_sessions
 
@@ -39,6 +41,9 @@ def create_chat_session(
     """
     Create new session (QA, Discussion, Revision).
     """
+    print(f"Creating chat session for user: {current_user.id}")
+    print(f"Session data: {session_data}")
+    
     # Verify student profile exists and user has access
     student_profile = db.query(StudentProfile).filter(
         StudentProfile.id == session_data.student_profile_id
@@ -79,6 +84,8 @@ def create_chat_session(
     db.add(chat_session)
     db.commit()
     db.refresh(chat_session)
+    
+    print(f"Created chat session with ID: {chat_session.id} for user: {chat_session.user_id}")
     
     return chat_session
 
@@ -211,11 +218,12 @@ async def send_message(
     
     system_prompt += "Keep your responses educational, age-appropriate, and concise."
     
-    # Get AI response
+    # Get AI response with suggested questions
     ai_response = await ai_service.generate_chat_response(
         message=message_data.content,
         chat_history=formatted_history,
-        system_prompt=system_prompt
+        system_prompt=system_prompt,
+        include_suggestions=True
     )
     
     # Check for errors
@@ -228,12 +236,36 @@ async def send_message(
         try:
             ai_response_content = ai_response["choices"][0]["message"]["content"]
             
-            # Generate suggested follow-up questions
-            suggested_questions = [
-                "Can you explain this in more detail?",
-                "How does this relate to other topics we've studied?",
-                "Can you provide an example of this concept?"
-            ]
+            # Extract suggested questions from the response
+            suggested_questions = []
+            
+            # Try to parse JSON array of questions at the end of the response
+            import json
+            import re
+            
+            # Look for JSON array pattern at the end of the response
+            json_match = re.search(r'\[.*\]$', ai_response_content.strip(), re.DOTALL)
+            if json_match:
+                try:
+                    questions_json = json_match.group(0)
+                    suggested_questions = json.loads(questions_json)
+                    # Remove the JSON part from the response content
+                    ai_response_content = ai_response_content[:json_match.start()].strip()
+                except json.JSONDecodeError:
+                    # If JSON parsing fails, use default questions
+                    suggested_questions = [
+                        "Can you explain this in more detail?",
+                        "How does this relate to other topics we've studied?",
+                        "Can you provide an example of this concept?"
+                    ]
+            else:
+                # If no JSON found, use default questions
+                suggested_questions = [
+                    "Can you explain this in more detail?",
+                    "How does this relate to other topics we've studied?",
+                    "Can you provide an example of this concept?"
+                ]
+                
         except (KeyError, IndexError):
             ai_response_content = "I'm sorry, I couldn't generate a proper response. Please try again."
             suggested_questions = []

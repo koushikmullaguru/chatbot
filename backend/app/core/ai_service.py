@@ -21,13 +21,14 @@ class AIService:
         }
     
     async def generate_chat_response(
-        self, 
-        message: str, 
+        self,
+        message: str,
         chat_history: Optional[List[Dict[str, str]]] = None,
-        system_prompt: Optional[str] = None
+        system_prompt: Optional[str] = None,
+        include_suggestions: bool = True
     ) -> Dict[str, Any]:
         """
-        Generate a response for chat messages
+        Generate a response for chat messages with optional suggested questions
         """
         messages = []
         
@@ -39,11 +40,18 @@ class AIService:
         
         messages.append({"role": "user", "content": message})
         
+        # Add instruction for generating suggested questions if requested
+        if include_suggestions:
+            messages.append({
+                "role": "system",
+                "content": "After providing your response, generate 3-4 relevant follow-up questions that the user might want to ask. Format these questions as a JSON array at the end of your response, like this: [\"Question 1?\", \"Question 2?\", \"Question 3?\"]"
+            })
+        
         payload = {
             "model": self.model,
             "messages": messages,
             "temperature": 0.7,
-            "max_tokens": 1000
+            "max_tokens": 1500  # Increased to accommodate suggested questions
         }
         
         async with httpx.AsyncClient(timeout=60.0) as client:
@@ -63,12 +71,13 @@ class AIService:
                 return {"error": f"Unexpected error: {str(e)}"}
     
     async def generate_quiz(
-        self, 
-        subject: str, 
-        topic: str, 
+        self,
+        subject: str,
+        topic: str,
         difficulty: str = "medium",
         num_questions: int = 10,
-        question_types: List[str] = None
+        question_types: List[str] = None,
+        duration: int = 30
     ) -> Dict[str, Any]:
         """
         Generate quiz questions
@@ -81,16 +90,30 @@ class AIService:
         prompt = f"""
         Create a {difficulty} level quiz about {topic} in {subject}.
         The quiz should have {num_questions} questions of the following types: {', '.join(question_types)}.
+        The quiz should be designed to be completed in {duration} minutes.
         
         For each question, provide:
-        1. The question text
-        2. The question type
-        3. Options (if multiple choice)
-        4. The correct answer
-        5. An explanation of the answer
-        6. The point value for the question
+        1. The question text (in a field called "question")
+        2. The question type (in a field called "type")
+        3. Options (if multiple choice, in a field called "options" as an array of text strings)
+        4. The correct answer (in a field called "correctAnswer")
+        5. An explanation of the answer (in a field called "explanation")
         
-        Format your response as a JSON object with a "questions" array containing each question object.
+        Format your response as a valid JSON object with a "questions" array containing each question object.
+        Each question object must have the exact field names: "question", "type", "options", "correctAnswer", "explanation".
+        
+        Example format:
+        {{
+          "questions": [
+            {{
+              "question": "What is the capital of France?",
+              "type": "single-choice",
+              "options": ["London", "Berlin", "Paris", "Madrid"],
+              "correctAnswer": "Paris",
+              "explanation": "Paris is the capital and most populous city of France."
+            }}
+          ]
+        }}
         """
         
         messages = [{"role": "system", "content": system_prompt}]

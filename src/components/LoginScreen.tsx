@@ -1,102 +1,71 @@
 import { useState } from 'react';
 import { User, UserType } from '../types';
-import { Mail, GraduationCap, Users, BookOpen } from 'lucide-react';
+import { Mail, GraduationCap, Users, BookOpen, ArrowLeft } from 'lucide-react';
 import { Moon, Sun } from 'lucide-react';
+import { authService } from '../api/authService';
 
 interface LoginScreenProps {
   onLogin: (user: User) => void;
+  onShowRegister?: () => void;
   theme: 'light' | 'dark';
   onToggleTheme: () => void;
 }
 
-export function LoginScreen({ onLogin, theme, onToggleTheme }: LoginScreenProps) {
+export function LoginScreen({ onLogin, onShowRegister, theme, onToggleTheme }: LoginScreenProps) {
   const [selectedType, setSelectedType] = useState<UserType | null>(null);
   const [email, setEmail] = useState('');
   const [otp, setOtp] = useState('');
   const [otpSent, setOtpSent] = useState(false);
   const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  // Mock users for demo
-  const mockUsers: Record<string, User> = {
-    'teacher@school.com': {
-      id: 't1',
-      name: 'Ms. Sarah Johnson',
-      email: 'teacher@school.com',
-      userType: 'teacher',
-      subject: 'Mathematics',
-      teacherRole: 'subject-teacher',
-      teacherSubject: 'Mathematics',
-    },
-    'math.teacher@school.com': {
-      id: 't2',
-      name: 'Priya Sharma',
-      email: 'math.teacher@school.com',
-      userType: 'teacher',
-      subject: 'Mathematics',
-      teacherRole: 'subject-teacher',
-      teacherSubject: 'Mathematics',
-    },
-    'class.head@school.com': {
-      id: 't3',
-      name: 'Rajesh Kumar',
-      email: 'class.head@school.com',
-      userType: 'teacher',
-      subject: 'All Subjects',
-      teacherRole: 'class-head',
-      teacherClass: '10',
-    },
-    'principal@school.com': {
-      id: 't4',
-      name: 'Dr. Meera Patel',
-      email: 'principal@school.com',
-      userType: 'teacher',
-      subject: 'All Subjects',
-      teacherRole: 'principal',
-    },
-    'parent@school.com': {
-      id: 'p1',
-      name: 'John Smith',
-      email: 'parent@school.com',
-      userType: 'parent',
-    },
-    'student@school.com': {
-      id: 's1',
-      name: 'Emma Wilson',
-      email: 'student@school.com',
-      userType: 'student',
-      grade: '8th Grade',
-    },
-  };
-
-  const handleSendOtp = (e: React.FormEvent) => {
+  const handleSendOtp = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Mock OTP sending
-    setOtpSent(true);
-    // In real app, OTP would be sent to email/phone
-  };
-
-  const handleVerifyOtp = (e: React.FormEvent) => {
-    e.preventDefault();
-    // Mock OTP verification (accept any 6-digit code)
-    if (otp.length === 6) {
-      const user = mockUsers[email] || {
-        id: 'p2',
-        name: 'Parent User',
-        email: email,
-        userType: 'parent' as UserType,
-      };
-      onLogin(user);
+    setLoading(true);
+    setError(null);
+    
+    try {
+      const response = await authService.requestOtp(email);
+      setOtpSent(true);
+      console.log('OTP sent:', response.otp); // Remove in production
+    } catch (err) {
+      setError('Failed to send OTP. Please try again.');
+      console.error('OTP request error:', err);
+    } finally {
+      setLoading(false);
     }
   };
 
-  const handlePasswordLogin = (e: React.FormEvent) => {
+  const handleVerifyOtp = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Mock password login (accept any password for demo)
-    if (password.length > 0) {
-      const user = mockUsers[email];
-      if (user) {
-        onLogin(user);
-      }
+    setLoading(true);
+    setError(null);
+    
+    try {
+      const { user } = await authService.verifyOtp(email, otp);
+      onLogin(user);
+    } catch (err) {
+      setError('Invalid OTP. Please try again.');
+      console.error('OTP verification error:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handlePasswordLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setError(null);
+    
+    try {
+      const { user } = await authService.login(email, password);
+      onLogin(user);
+    } catch (err) {
+      setError('Invalid email or password. Please try again.');
+      console.error('Login error:', err);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -181,6 +150,12 @@ export function LoginScreen({ onLogin, theme, onToggleTheme }: LoginScreenProps)
             </p>
           </div>
 
+          {error && (
+            <div className="mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded-lg">
+              {error}
+            </div>
+          )}
+
           {selectedType === 'parent' ? (
             // OTP Login for Parents
             !otpSent ? (
@@ -201,12 +176,13 @@ export function LoginScreen({ onLogin, theme, onToggleTheme }: LoginScreenProps)
                 </div>
                 <button
                   type="submit"
-                  className="w-full bg-blue-500 text-white py-3 rounded-lg hover:bg-blue-600 transition-colors"
+                  className="w-full bg-blue-500 text-white py-3 rounded-lg hover:bg-blue-600 transition-colors disabled:opacity-50"
+                  disabled={loading}
                 >
-                  Send OTP
+                  {loading ? 'Sending...' : 'Send OTP'}
                 </button>
                 <p className="text-xs text-center text-gray-500 dark:text-gray-400">
-                  Demo: Use any email, OTP will be mocked
+                  Demo: Use any email, OTP will be displayed in console
                 </p>
               </form>
             ) : (
@@ -228,10 +204,10 @@ export function LoginScreen({ onLogin, theme, onToggleTheme }: LoginScreenProps)
                 </div>
                 <button
                   type="submit"
-                  className="w-full bg-blue-500 text-white py-3 rounded-lg hover:bg-blue-600 transition-colors"
-                  disabled={otp.length !== 6}
+                  className="w-full bg-blue-500 text-white py-3 rounded-lg hover:bg-blue-600 transition-colors disabled:opacity-50"
+                  disabled={otp.length !== 6 || loading}
                 >
-                  Verify OTP
+                  {loading ? 'Verifying...' : 'Verify OTP'}
                 </button>
                 <button
                   type="button"
@@ -241,7 +217,7 @@ export function LoginScreen({ onLogin, theme, onToggleTheme }: LoginScreenProps)
                   Change email
                 </button>
                 <p className="text-xs text-center text-gray-500 dark:text-gray-400">
-                  Demo: Enter any 6-digit code
+                  Demo: Check console for OTP
                 </p>
               </form>
             )
@@ -275,14 +251,29 @@ export function LoginScreen({ onLogin, theme, onToggleTheme }: LoginScreenProps)
               </div>
               <button
                 type="submit"
-                className={`w-full ${selectedType === 'teacher' ? 'bg-purple-500 hover:bg-purple-600' : 'bg-green-500 hover:bg-green-600'} text-white py-3 rounded-lg transition-colors`}
+                className={`w-full ${selectedType === 'teacher' ? 'bg-purple-500 hover:bg-purple-600' : 'bg-green-500 hover:bg-green-600'} text-white py-3 rounded-lg transition-colors disabled:opacity-50`}
+                disabled={loading}
               >
-                Sign In
+                {loading ? 'Signing In...' : 'Sign In'}
               </button>
               <p className="text-xs text-center text-gray-500 dark:text-gray-400">
-                Demo: Use any password with the emails above
+                Demo: Use any password with your email
               </p>
             </form>
+          )}
+          
+          {onShowRegister && (
+            <div className="text-center mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
+              <p className="text-sm text-gray-600 dark:text-gray-400">
+                Don't have an account?{' '}
+                <button
+                  onClick={onShowRegister}
+                  className="text-purple-600 dark:text-purple-400 hover:text-purple-800 dark:hover:text-purple-300 font-medium"
+                >
+                  Sign up
+                </button>
+              </p>
+            </div>
           )}
         </div>
       </div>

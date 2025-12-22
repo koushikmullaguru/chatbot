@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { StudentProfile } from '../types';
 import { Lock, LogOut, Plus, BarChart3 } from 'lucide-react';
 import { Theme } from '../hooks/useTheme';
 import { ParentDashboard } from './ParentDashboard';
+import { getStudentProfiles } from '../api/studentProfileService';
 
 interface ProfileSelectorProps {
   parentId: string;
@@ -17,31 +18,81 @@ export function ProfileSelector({ onSelectProfile, onLogout, theme, onToggleThem
   const [pin, setPin] = useState('');
   const [error, setError] = useState('');
   const [showDashboard, setShowDashboard] = useState(false);
+  const [profiles, setProfiles] = useState<StudentProfile[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
-  // Mock student profiles
-  const profiles: StudentProfile[] = [
-    {
-      id: 'st1',
-      name: 'Emma Smith',
-      grade: '8th Grade',
-      avatar: '👧',
-      pin: '1234',
-    },
-    {
-      id: 'st2',
-      name: 'Oliver Smith',
-      grade: '6th Grade',
-      avatar: '👦',
-      pin: '5678',
-    },
-    {
-      id: 'st3',
-      name: 'Sophia Smith',
-      grade: '10th Grade',
-      avatar: '👩',
-      pin: '9012',
-    },
-  ];
+  // Fetch student profiles from the backend
+  useEffect(() => {
+    const fetchProfiles = async () => {
+      try {
+        const studentProfiles = await getStudentProfiles();
+        setProfiles(studentProfiles);
+      } catch (error) {
+        console.error('Failed to fetch student profiles:', error);
+        // Fallback to mock data if API fails
+        setProfiles([
+          {
+            id: 'st1',
+            name: 'Emma Smith',
+            grade: '8th Grade',
+            avatar: '👧',
+            pin: '1234',
+            roll_number: 'STU2024001',
+            date_of_birth: 'January 15, 2012',
+            blood_group: 'A+',
+            admission_date: 'April 1, 2020',
+            email: 'emma.smith@school.edu',
+            phone: '+1 234-567-8901',
+            address: '123 Education Street, Learning City, 12345',
+            section: 'B',
+            parent_name: 'Jane Smith',
+            parent_email: 'jane.smith@email.com',
+            parent_phone: '+1 234-567-8902'
+          },
+          {
+            id: 'st2',
+            name: 'Oliver Smith',
+            grade: '6th Grade',
+            avatar: '👦',
+            pin: '5678',
+            roll_number: 'STU2024002',
+            date_of_birth: 'March 22, 2014',
+            blood_group: 'B+',
+            admission_date: 'April 1, 2020',
+            email: 'oliver.smith@school.edu',
+            phone: '+1 234-567-8903',
+            address: '123 Education Street, Learning City, 12345',
+            section: 'A',
+            parent_name: 'John Smith',
+            parent_email: 'john.smith@email.com',
+            parent_phone: '+1 234-567-8904'
+          },
+          {
+            id: 'st3',
+            name: 'Sophia Smith',
+            grade: '10th Grade',
+            avatar: '👩',
+            pin: '9012',
+            roll_number: 'STU2024015',
+            date_of_birth: 'January 15, 2010',
+            blood_group: 'O+',
+            admission_date: 'April 1, 2018',
+            email: 'sophia.smith@school.edu',
+            phone: '+1 234-567-8900',
+            address: '123 Education Street, Learning City, 12345',
+            section: 'A',
+            parent_name: 'John Doe',
+            parent_email: 'parent@email.com',
+            parent_phone: '+1 234-567-8901'
+          },
+        ]);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchProfiles();
+  }, []);
 
   const handleProfileClick = (profileId: string) => {
     setSelectedProfileId(profileId);
@@ -132,6 +183,17 @@ export function ProfileSelector({ onSelectProfile, onLogout, theme, onToggleThem
               </button>
             </form>
           </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-indigo-100 via-purple-50 to-pink-100 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900 flex items-center justify-center p-4">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-500 mx-auto mb-4"></div>
+          <p className="text-gray-600 dark:text-gray-300">Loading student profiles...</p>
         </div>
       </div>
     );

@@ -15,6 +15,41 @@ from ...schemas.assessments import (
 router = APIRouter()
 
 
+@router.post("/create-worksheet", response_model=AssessmentResponse)
+def create_worksheet(
+    assessment_data: AssessmentCreate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+) -> Any:
+    """
+    Create a new worksheet assessment.
+    """
+    # Only teachers can create assessments
+    if current_user.user_type != "teacher":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only teachers can create assessments"
+        )
+    
+    # Create assessment
+    assessment = Assessment(
+        title=assessment_data.title,
+        type="worksheet",  # Explicitly set to worksheet
+        class_id=assessment_data.class_id,
+        subject_id=assessment_data.subject_id,
+        topic_id=assessment_data.topic_id,
+        difficulty=assessment_data.difficulty,
+        duration=assessment_data.duration,
+        total_marks=assessment_data.total_marks,
+        created_by=current_user.id
+    )
+    db.add(assessment)
+    db.commit()
+    db.refresh(assessment)
+    
+    return assessment
+
+
 @router.get("/", response_model=List[AssessmentResponse])
 def get_assessments(
     current_user: User = Depends(get_current_user),
@@ -95,16 +130,72 @@ def submit_quiz(
             detail="Only students or parents can submit quizzes"
         )
     
-    # TODO: Verify student profile ID is valid and accessible by current user
+    # Verify student profile ID is valid and accessible by current user
+    if not answers:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No answers provided"
+        )
     
-    # Create assessment result
-    assessment_result = AssessmentResult(
-        assessment_id=id,
-        student_profile_id=answers[0].student_profile_id if answers else "",
-        total_score=0,  # Will be calculated
-        percentage=0,  # Will be calculated
-    )
-    db.add(assessment_result)
+    student_profile_id = answers[0].student_profile_id
+    student_profile = db.query(StudentProfile).filter(StudentProfile.id == student_profile_id).first()
+    
+    if not student_profile:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Student profile not found"
+        )
+    
+    # Check if user has access to this student profile
+    if current_user.user_type == "student":
+        # Students can only submit for their own profile
+        if student_profile.user_id != current_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You can only submit quizzes for your own profile"
+            )
+    elif current_user.user_type == "parent":
+        # Parents can only submit for their linked students
+        from ...models.user_management import ParentStudentRelation
+        is_linked = db.query(ParentStudentRelation).filter(
+            ParentStudentRelation.parent_id == current_user.id,
+            ParentStudentRelation.student_profile_id == student_profile_id
+        ).first()
+        
+        if not is_linked:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You can only submit quizzes for your linked students"
+            )
+    
+    # Check if there's already a result for this student and assessment
+    existing_result = db.query(AssessmentResult).filter(
+        AssessmentResult.assessment_id == id,
+        AssessmentResult.student_profile_id == student_profile_id
+    ).first()
+    
+    if existing_result:
+        # Update existing result instead of creating a new one
+        assessment_result = existing_result
+        assessment_result.total_score = 0  # Will be recalculated
+        assessment_result.percentage = 0  # Will be recalculated
+        assessment_result.completed_at = datetime.utcnow()
+        
+        # Delete existing student answers
+        db.query(StudentAnswer).filter(
+            StudentAnswer.assessment_result_id == assessment_result.id
+        ).delete()
+    else:
+        # Create new assessment result
+        assessment_result = AssessmentResult(
+            assessment_id=id,
+            student_profile_id=student_profile_id,
+            total_score=0,  # Will be calculated
+            percentage=0,  # Will be calculated
+            completed_at=datetime.utcnow()
+        )
+        db.add(assessment_result)
+    
     db.commit()
     db.refresh(assessment_result)
     
@@ -116,6 +207,12 @@ def submit_quiz(
         # Get question
         question = db.query(Question).filter(Question.id == answer_data.question_id).first()
         if not question:
+            print(f"Question not found: {answer_data.question_id}")
+            continue
+        
+        # Verify question belongs to this assessment
+        if question.assessment_id != assessment.id:
+            print(f"Question {question.id} does not belong to assessment {assessment.id}")
             continue
         
         total_possible += question.marks
@@ -128,10 +225,26 @@ def submit_quiz(
             score=0  # Will be calculated
         )
         
-        # TODO: Grade the answer
-        # For now, assume all answers are correct
-        student_answer.score = question.marks
-        total_score += question.marks
+        # Grade the answer
+        if question.type == "multiple-choice":
+            # For multiple choice, check if the answer matches the correct answer
+            if answer_data.answer.strip().lower() == question.correct_answer.strip().lower():
+                student_answer.score = question.marks
+                total_score += question.marks
+            else:
+                student_answer.score = 0
+        elif question.type == "true-false":
+            # For true/false, check if the answer matches the correct answer
+            if answer_data.answer.strip().lower() == question.correct_answer.strip().lower():
+                student_answer.score = question.marks
+                total_score += question.marks
+            else:
+                student_answer.score = 0
+        else:
+            # For short answer and essay, we'll need manual grading or AI grading
+            # For now, give partial credit (50%)
+            student_answer.score = question.marks * 0.5
+            total_score += student_answer.score
         
         db.add(student_answer)
     

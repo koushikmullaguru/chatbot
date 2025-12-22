@@ -1,6 +1,8 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { User, BookOpen, Award, TrendingUp, Calendar, Mail, Phone, MapPin, Edit2, Save, X, Star, Target, CheckCircle, GraduationCap } from 'lucide-react';
 import { StudentProfile } from '../types';
+import { normalizeGrade } from '../utils/gradeUtils';
+import { getStudentProfileByUserId, getStudentInterests, getStudentAchievements, getStudentReportCards, updateStudentInterests } from '../api/studentProfileService';
 
 interface StudentProfileScreenProps {
   profile: StudentProfile;
@@ -28,99 +30,122 @@ interface ReportCard {
 
 export function StudentProfileScreen({ profile, onClose }: StudentProfileScreenProps) {
   const [isEditing, setIsEditing] = useState(false);
-  const [editedInterests, setEditedInterests] = useState<string[]>([
-    'Mathematics',
-    'Science',
-    'Reading',
-    'Sports',
-    'Art',
-    'Music'
-  ]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [studentData, setStudentData] = useState<any>(null);
+  const [interests, setInterests] = useState<string[]>([]);
+  const [achievements, setAchievements] = useState<any[]>([]);
+  const [reportCards, setReportCards] = useState<any[]>([]);
+  const [editedInterests, setEditedInterests] = useState<string[]>([]);
   const [newInterest, setNewInterest] = useState('');
 
-  // Mock student data - in real app, this would come from an API
-  const studentData = {
-    fullName: profile.name,
-    class: profile.class,
-    rollNumber: 'STU2024015',
-    dateOfBirth: 'January 15, 2010',
-    email: 'student@school.edu',
-    phone: '+1 234-567-8900',
-    address: '123 Education Street, Learning City, 12345',
-    bloodGroup: 'O+',
-    parentName: 'John Doe',
-    parentEmail: 'parent@email.com',
-    parentPhone: '+1 234-567-8901',
-    admissionDate: 'April 1, 2018',
-    section: 'A'
-  };
+  // Fetch student profile data
+  useEffect(() => {
+    const fetchStudentData = async () => {
+      try {
+        setIsLoading(true);
+        setError(null);
+        
+        // Fetch student profile details using the profile ID
+        // Since we don't have the user ID, we'll use the profile ID as a fallback
+        // This should be improved in the future
+        const profileData = await getStudentProfileByUserId(profile.id);
+        
+        // Format date of birth if it exists
+        const formatDate = (dateString?: string) => {
+          if (!dateString) return 'January 15, 2010';
+          const date = new Date(dateString);
+          return date.toLocaleDateString('en-US', {
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric'
+          });
+        };
+        
+        // Format admission date if it exists
+        const formatAdmissionDate = (dateString?: string) => {
+          if (!dateString) return 'April 1, 2018';
+          const date = new Date(dateString);
+          return date.toLocaleDateString('en-US', {
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric'
+          });
+        };
+        
+        setStudentData({
+          id: profileData.id,
+          fullName: profileData.name,
+          class: normalizeGrade(profileData.grade),
+          rollNumber: profileData.roll_number || 'STU2024015',
+          dateOfBirth: formatDate(profileData.date_of_birth),
+          email: profileData.email || 'student@school.edu',
+          phone: profileData.phone || '+1 234-567-8900',
+          address: profileData.address || '123 Education Street, Learning City, 12345',
+          bloodGroup: profileData.blood_group || 'O+',
+          parentName: profileData.parent_name || 'John Doe',
+          parentEmail: profileData.parent_email || 'parent@email.com',
+          parentPhone: profileData.parent_phone || '+1 234-567-8901',
+          admissionDate: formatAdmissionDate(profileData.admission_date),
+          section: profileData.section || 'A'
+        });
+        
+        // Fetch student interests using the student profile ID
+        const interestsData = await getStudentInterests(profileData.id);
+        const interestNames = interestsData.map((interest: any) => interest.interest_name);
+        setInterests(interestNames);
+        setEditedInterests(interestNames);
+        
+        // Fetch student achievements using the student profile ID
+        const achievementsData = await getStudentAchievements(profileData.id);
+        setAchievements(achievementsData);
+        
+        // Fetch student report cards using the student profile ID
+        const reportCardsData = await getStudentReportCards(profileData.id);
+        setReportCards(reportCardsData);
+        
+      } catch (err) {
+        console.error('Error fetching student data:', err);
+        setError('Failed to load student profile data. Please try again.');
+      } finally {
+        setIsLoading(false);
+      }
+    };
 
-  const reportCards: ReportCard[] = [
-    {
-      term: 'Final Term',
-      year: '2024',
-      subjects: [
-        { name: 'Mathematics', grade: 'A+', marks: 95, outOf: 100, percentage: 95 },
-        { name: 'Science', grade: 'A', marks: 88, outOf: 100, percentage: 88 },
-        { name: 'English', grade: 'A+', marks: 92, outOf: 100, percentage: 92 },
-        { name: 'Social Studies', grade: 'A', marks: 85, outOf: 100, percentage: 85 },
-        { name: 'Computer Science', grade: 'A+', marks: 97, outOf: 100, percentage: 97 },
-        { name: 'Physical Education', grade: 'A', marks: 90, outOf: 100, percentage: 90 }
-      ],
-      overall: {
-        totalMarks: 600,
-        obtainedMarks: 547,
-        percentage: 91.17,
-        grade: 'A+',
-        rank: 3
-      }
-    },
-    {
-      term: 'Mid Term',
-      year: '2024',
-      subjects: [
-        { name: 'Mathematics', grade: 'A', marks: 88, outOf: 100, percentage: 88 },
-        { name: 'Science', grade: 'A', marks: 85, outOf: 100, percentage: 85 },
-        { name: 'English', grade: 'A', marks: 90, outOf: 100, percentage: 90 },
-        { name: 'Social Studies', grade: 'B+', marks: 82, outOf: 100, percentage: 82 },
-        { name: 'Computer Science', grade: 'A+', marks: 95, outOf: 100, percentage: 95 },
-        { name: 'Physical Education', grade: 'A', marks: 87, outOf: 100, percentage: 87 }
-      ],
-      overall: {
-        totalMarks: 600,
-        obtainedMarks: 527,
-        percentage: 87.83,
-        grade: 'A',
-        rank: 5
-      }
-    },
-    {
-      term: 'Final Term',
-      year: '2023',
-      subjects: [
-        { name: 'Mathematics', grade: 'A', marks: 90, outOf: 100, percentage: 90 },
-        { name: 'Science', grade: 'A', marks: 86, outOf: 100, percentage: 86 },
-        { name: 'English', grade: 'A', marks: 88, outOf: 100, percentage: 88 },
-        { name: 'Social Studies', grade: 'A', marks: 84, outOf: 100, percentage: 84 },
-        { name: 'Computer Science', grade: 'A+', marks: 94, outOf: 100, percentage: 94 },
-        { name: 'Physical Education', grade: 'A', marks: 89, outOf: 100, percentage: 89 }
-      ],
-      overall: {
-        totalMarks: 600,
-        obtainedMarks: 531,
-        percentage: 88.50,
-        grade: 'A',
-        rank: 4
-      }
+    fetchStudentData();
+  }, [profile.id]);
+
+  // Transform report cards data to match the expected format
+  const transformedReportCards = reportCards.map((report: any) => ({
+    term: report.term,
+    year: report.year,
+    subjects: report.subject_grades.map((subject: any) => ({
+      name: subject.subject,
+      grade: subject.grade,
+      marks: subject.marks,
+      outOf: subject.out_of,
+      percentage: subject.percentage
+    })),
+    overall: {
+      totalMarks: report.subject_grades.reduce((sum: number, subject: any) => sum + subject.out_of, 0),
+      obtainedMarks: report.subject_grades.reduce((sum: number, subject: any) => sum + subject.marks, 0),
+      percentage: report.percentage,
+      grade: (() => {
+        if (report.subject_grades.length === 0) return 'B';
+        const avgGrade = report.subject_grades.reduce((sum: number, subject: any) => {
+          const gradeValue = subject.grade === 'A+' ? 4 : subject.grade === 'A' ? 3.5 :
+                           subject.grade === 'B+' ? 3 : subject.grade === 'B' ? 2.5 :
+                           subject.grade === 'C' ? 2 : 1;
+          return sum + gradeValue;
+        }, 0) / report.subject_grades.length;
+        
+        if (avgGrade >= 3.5) return 'A+';
+        if (avgGrade >= 3) return 'A';
+        return 'B';
+      })(),
+      rank: report.rank || 1
     }
-  ];
-
-  const achievements = [
-    { title: 'Math Olympiad Winner', date: 'Nov 2024', icon: '🏆' },
-    { title: 'Science Fair - First Prize', date: 'Oct 2024', icon: '🔬' },
-    { title: 'Perfect Attendance', date: 'Sep 2024', icon: '🎯' },
-    { title: 'Creative Writing Contest', date: 'Aug 2024', icon: '✍️' }
-  ];
+  }));
 
   const getGradeColor = (grade: string) => {
     if (grade.startsWith('A')) return 'text-green-600 dark:text-green-400';
@@ -147,6 +172,59 @@ export function StudentProfileScreen({ profile, onClose }: StudentProfileScreenP
   const handleRemoveInterest = (interest: string) => {
     setEditedInterests(editedInterests.filter(i => i !== interest));
   };
+
+  const handleSaveInterests = async () => {
+    try {
+      // Use the student profile ID from the fetched data
+      if (studentData && studentData.id) {
+        await updateStudentInterests(studentData.id, editedInterests);
+        setInterests(editedInterests);
+        setIsEditing(false);
+      } else {
+        setError('Student profile ID not found. Please try again.');
+      }
+    } catch (error) {
+      console.error('Error updating interests:', error);
+      setError('Failed to update interests. Please try again.');
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl max-w-6xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+          <div className="flex items-center justify-center h-96">
+            <div className="text-center">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-500 mx-auto mb-4"></div>
+              <p className="text-gray-600 dark:text-gray-400">Loading student profile...</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (error || !studentData) {
+    return (
+      <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl max-w-6xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+          <div className="flex items-center justify-center h-96">
+            <div className="text-center">
+              <div className="text-red-500 text-5xl mb-4">⚠️</div>
+              <h3 className="text-xl font-semibold mb-2 dark:text-white">Error Loading Profile</h3>
+              <p className="text-gray-600 dark:text-gray-400 mb-4">{error || 'Failed to load student profile data'}</p>
+              <button
+                onClick={onClose}
+                className="px-4 py-2 bg-purple-500 text-white rounded-lg hover:bg-purple-600 transition-colors"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
@@ -248,7 +326,7 @@ export function StudentProfileScreen({ profile, onClose }: StudentProfileScreenP
                     Interests & Hobbies
                   </h3>
                   <button
-                    onClick={() => setIsEditing(!isEditing)}
+                    onClick={isEditing ? handleSaveInterests : () => setIsEditing(!isEditing)}
                     className="p-2 hover:bg-white/50 dark:hover:bg-gray-700 rounded-lg transition-colors"
                   >
                     {isEditing ? (
@@ -303,19 +381,23 @@ export function StudentProfileScreen({ profile, onClose }: StudentProfileScreenP
                   Recent Achievements
                 </h3>
                 <div className="space-y-3">
-                  {achievements.map((achievement, index) => (
-                    <div
-                      key={index}
-                      className="bg-white dark:bg-gray-800 rounded-lg p-3 flex items-center gap-3"
-                    >
-                      <div className="text-2xl">{achievement.icon}</div>
-                      <div className="flex-1">
-                        <p className="dark:text-white">{achievement.title}</p>
-                        <p className="text-xs text-gray-500 dark:text-gray-400">{achievement.date}</p>
+                  {achievements.length > 0 ? (
+                    achievements.map((achievement, index) => (
+                      <div
+                        key={index}
+                        className="bg-white dark:bg-gray-800 rounded-lg p-3 flex items-center gap-3"
+                      >
+                        <div className="text-2xl">{achievement.icon || '🏆'}</div>
+                        <div className="flex-1">
+                          <p className="dark:text-white">{achievement.title}</p>
+                          <p className="text-xs text-gray-500 dark:text-gray-400">{achievement.date}</p>
+                        </div>
+                        <CheckCircle className="w-5 h-5 text-green-500" />
                       </div>
-                      <CheckCircle className="w-5 h-5 text-green-500" />
-                    </div>
-                  ))}
+                    ))
+                  ) : (
+                    <p className="text-gray-500 dark:text-gray-400 text-center py-4">No achievements recorded yet</p>
+                  )}
                 </div>
               </div>
             </div>
@@ -328,7 +410,8 @@ export function StudentProfileScreen({ profile, onClose }: StudentProfileScreenP
                   Academic Report Cards
                 </h3>
 
-                {reportCards.map((report, reportIndex) => (
+                {transformedReportCards.length > 0 ? (
+                  transformedReportCards.map((report, reportIndex) => (
                   <div
                     key={reportIndex}
                     className="mb-6 last:mb-0 bg-white dark:bg-gray-900 rounded-xl p-6 border border-gray-200 dark:border-gray-700"
@@ -378,7 +461,7 @@ export function StudentProfileScreen({ profile, onClose }: StudentProfileScreenP
                       <h5 className="text-sm uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-3">
                         Subject-wise Performance
                       </h5>
-                      {report.subjects.map((subject, index) => (
+                      {report.subjects.map((subject: any, index: number) => (
                         <div
                           key={index}
                           className="bg-gray-50 dark:bg-gray-800 rounded-lg p-4"
@@ -430,7 +513,12 @@ export function StudentProfileScreen({ profile, onClose }: StudentProfileScreenP
                       </div>
                     </div>
                   </div>
-                ))}
+                  ))
+                ) : (
+                  <div className="text-center py-8">
+                    <p className="text-gray-500 dark:text-gray-400">No report cards available</p>
+                  </div>
+                )}
               </div>
             </div>
           </div>

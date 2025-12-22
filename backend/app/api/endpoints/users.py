@@ -24,6 +24,8 @@ def get_current_user_profile(
     """
     Get current user's profile data.
     """
+    # The normalized_grade property will be automatically included
+    # in the response due to the from_attributes = True config
     return current_user
 
 
@@ -48,6 +50,8 @@ def update_current_user_profile(
     db.commit()
     db.refresh(current_user)
     
+    # The normalized_grade property will be automatically included
+    # in the response due to from_attributes = True config
     return current_user
 
 
@@ -73,6 +77,8 @@ def get_linked_student_profiles(
         .all()
     )
     
+    # The normalized_grade property will be automatically included
+    # in the response due to from_attributes = True config
     return student_profiles
 
 
@@ -260,26 +266,48 @@ def get_student_achievements(
     return achievements
 
 
-@router.post("/student-profiles", response_model=StudentProfileResponse)
-def create_student_profile(
+@router.post("/student-profiles/{user_id}", response_model=StudentProfileResponse)
+def create_student_profile_by_user_id(
+    user_id: str,
     profile_data: StudentProfileCreate,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ) -> Any:
     """
-    Create a new student profile.
+    Create a new student profile for a user ID.
     """
+    try:
+        # Convert string ID to UUID if needed
+        from uuid import UUID
+        user_uuid = UUID(user_id) if isinstance(user_id, str) else user_id
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid user ID format"
+        )
+    
     # Verify the user exists
-    user = db.query(User).filter(User.id == profile_data.user_id).first()
+    user = db.query(User).filter(User.id == user_uuid).first()
     if not user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found"
         )
     
+    # Check if student profile already exists for this user
+    existing_profile = db.query(StudentProfile).filter(
+        StudentProfile.user_id == user_uuid
+    ).first()
+    
+    if existing_profile:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Student profile already exists for this user"
+        )
+    
     # Create student profile
     student_profile = StudentProfile(
-        user_id=profile_data.user_id,
+        user_id=user_uuid,
         name=profile_data.name,
         grade=profile_data.grade,
         avatar=profile_data.avatar,
@@ -299,44 +327,51 @@ def create_student_profile(
     db.commit()
     db.refresh(student_profile)
     
+    # The normalized_grade property will be automatically included
+    # in the response due to from_attributes = True config
     return student_profile
 
 
-@router.get("/student-profiles/{id}", response_model=StudentProfileResponse)
-def get_student_profile(
-    id: str,
+@router.get("/student-profiles/{user_id}", response_model=StudentProfileResponse)
+def get_student_profile_by_user_id(
+    user_id: str,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ) -> Any:
     """
-    Get student profile details.
+    Get student profile details by user ID.
     """
     try:
         # Convert string ID to UUID if needed
         from uuid import UUID
-        student_profile_id = UUID(id) if isinstance(id, str) else id
-    except ValueError:
+        user_uuid = UUID(user_id) if isinstance(user_id, str) else user_id
+        print(f"Converted user ID: {user_uuid}")
+    except ValueError as e:
+        print(f"UUID conversion error: {e}")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid student profile ID format"
+            detail="Invalid user ID format"
         )
     
-    # Get student profile
+    # Get student profile by user ID
     student_profile = db.query(StudentProfile).filter(
-        StudentProfile.id == student_profile_id
+        StudentProfile.user_id == user_uuid
     ).first()
     
     if not student_profile:
+        print(f"Student profile not found for user ID: {user_uuid}")
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Student profile not found"
         )
     
+    print(f"Found student profile: {student_profile.name}")
+    
     # Check if user has access to this student profile
     if current_user.user_type == "parent":
         is_linked = db.query(ParentStudentRelation).filter(
             ParentStudentRelation.parent_id == current_user.id,
-            ParentStudentRelation.student_profile_id == student_profile_id
+            ParentStudentRelation.student_profile_id == student_profile.id
         ).first()
         
         if not is_linked:
@@ -351,32 +386,34 @@ def get_student_profile(
                 detail="You can only view your own profile"
             )
     
+    # The normalized_grade property will be automatically included
+    # in the response due to from_attributes = True config
     return student_profile
 
 
-@router.put("/student-profiles/{id}", response_model=StudentProfileResponse)
-def update_student_profile(
-    id: str,
+@router.put("/student-profiles/{user_id}", response_model=StudentProfileResponse)
+def update_student_profile_by_user_id(
+    user_id: str,
     profile_data: StudentProfileUpdate,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ) -> Any:
     """
-    Update student profile.
+    Update student profile by user ID.
     """
     try:
         # Convert string ID to UUID if needed
         from uuid import UUID
-        student_profile_id = UUID(id) if isinstance(id, str) else id
+        user_uuid = UUID(user_id) if isinstance(user_id, str) else user_id
     except ValueError:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid student profile ID format"
+            detail="Invalid user ID format"
         )
     
-    # Get student profile
+    # Get student profile by user ID
     student_profile = db.query(StudentProfile).filter(
-        StudentProfile.id == student_profile_id
+        StudentProfile.user_id == user_uuid
     ).first()
     
     if not student_profile:
@@ -389,7 +426,7 @@ def update_student_profile(
     if current_user.user_type == "parent":
         is_linked = db.query(ParentStudentRelation).filter(
             ParentStudentRelation.parent_id == current_user.id,
-            ParentStudentRelation.student_profile_id == student_profile_id
+            ParentStudentRelation.student_profile_id == student_profile.id
         ).first()
         
         if not is_linked:
@@ -411,6 +448,8 @@ def update_student_profile(
     db.commit()
     db.refresh(student_profile)
     
+    # The normalized_grade property will be automatically included
+    # in the response due to from_attributes = True config
     return student_profile
 
 

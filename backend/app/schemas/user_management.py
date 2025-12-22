@@ -35,6 +35,7 @@ class UserResponse(UserBase):
     id: str
     created_at: datetime
     updated_at: datetime
+    normalized_grade: Optional[str] = None
 
     @field_validator('id', mode='before')
     @classmethod
@@ -91,6 +92,7 @@ class StudentProfileResponse(StudentProfileBase):
     user_id: str
     created_at: datetime
     updated_at: datetime
+    normalized_grade: Optional[str] = None
 
     @field_validator('id', 'user_id', mode='before')
     @classmethod

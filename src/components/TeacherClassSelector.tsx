@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { GraduationCap, BookOpen, Users, ArrowRight } from 'lucide-react';
+import { normalizeGrade } from '../utils/gradeUtils';
 
 export interface ClassConfig {
   class: string;
@@ -23,13 +24,13 @@ export function TeacherClassSelector({ onSelect, title, description, showSection
   const [selectedTopics, setSelectedTopics] = useState<string[]>([]);
 
   const classes = [
-    '6th Grade',
-    '7th Grade',
-    '8th Grade',
-    '9th Grade',
-    '10th Grade',
-    '11th Grade',
-    '12th Grade'
+    normalizeGrade('6'),
+    normalizeGrade('7'),
+    normalizeGrade('8'),
+    normalizeGrade('9'),
+    normalizeGrade('10'),
+    normalizeGrade('11'),
+    normalizeGrade('12')
   ];
 
   const subjects = [
@@ -82,12 +83,6 @@ export function TeacherClassSelector({ onSelect, title, description, showSection
         topics: showTopics && selectedTopics.length > 0 ? selectedTopics : undefined,
       });
     }
-  };
-
-  const handlePinChange = (value: string) => {
-    const numericValue = value.replace(/\D/g, '').slice(0, 4);
-    setPin(numericValue);
-    setError('');
   };
 
   const canContinue = selectedClass && selectedSubject && (!showSection || selectedSection) && (!showTopics || selectedTopics.length > 0);

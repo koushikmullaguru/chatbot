@@ -6,14 +6,13 @@ from pydantic import BaseModel, field_validator
 
 # Chat Session schemas
 class ChatSessionBase(BaseModel):
-    user_id: str
     student_profile_id: str
     mode: str
     title: Optional[str] = None
 
 
 class ChatSessionCreate(ChatSessionBase):
-    pass
+    user_id: Optional[str] = None
 
 
 class ChatSessionUpdate(BaseModel):
@@ -26,7 +25,7 @@ class ChatSessionResponse(ChatSessionBase):
     created_at: datetime
     updated_at: datetime
 
-    @field_validator('id', 'user_id', 'student_profile_id', mode='before')
+    @field_validator('id', 'student_profile_id', mode='before')
     @classmethod
     def convert_uuid_to_str(cls, v: Any) -> Any:
         if isinstance(v, UUID):

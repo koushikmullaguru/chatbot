@@ -8,7 +8,7 @@ interface Question {
   options: string[];
   correctAnswer: number;
   explanation?: string;
-  topic: string;
+  chapter: string;
 }
 
 interface AssessmentModeProps {
@@ -25,10 +25,25 @@ export function AssessmentMode({ config, onComplete }: AssessmentModeProps) {
   const [questions, setQuestions] = useState<Question[]>([]);
 
   useEffect(() => {
-    // Generate questions based on config
-    const generatedQuestions = generateQuestions(config);
-    setQuestions(generatedQuestions);
-    setAnswers(new Array(generatedQuestions.length).fill(null));
+    // Use questions from API if available, otherwise generate them
+    if (config.questions && config.questions.length > 0) {
+      // Transform API questions to the format expected by the component
+      const transformedQuestions = config.questions.map((q: any, index: number) => ({
+        id: index + 1,
+        question: q.question || q.text,
+        options: q.options || [],
+        correctAnswer: q.correctAnswer || 0,
+        explanation: q.explanation || '',
+        chapter: q.chapter || config.chapters[0] || 'Unknown'
+      }));
+      setQuestions(transformedQuestions);
+      setAnswers(new Array(transformedQuestions.length).fill(null));
+    } else {
+      // Generate questions based on config
+      const generatedQuestions = generateQuestions(config);
+      setQuestions(generatedQuestions);
+      setAnswers(new Array(generatedQuestions.length).fill(null));
+    }
   }, [config]);
 
   useEffect(() => {
@@ -56,7 +71,7 @@ export function AssessmentMode({ config, onComplete }: AssessmentModeProps) {
           options: ['x = 5', 'x = 10', 'x = 7.5', 'x = 2.5'],
           correctAnswer: 0,
           explanation: 'Subtract 5 from both sides: 2x = 10, then divide by 2: x = 5',
-          topic: 'Algebra'
+          chapter: 'Algebra'
         },
         {
           id: 2,
@@ -64,7 +79,7 @@ export function AssessmentMode({ config, onComplete }: AssessmentModeProps) {
           options: ['49', '25', '36', '64'],
           correctAnswer: 0,
           explanation: '(3 + 4)² = 7² = 49',
-          topic: 'Algebra'
+          chapter: 'Algebra'
         }
       ],
       'Geometry': [
@@ -74,7 +89,7 @@ export function AssessmentMode({ config, onComplete }: AssessmentModeProps) {
           options: ['78.5 cm²', '31.4 cm²', '15.7 cm²', '62.8 cm²'],
           correctAnswer: 0,
           explanation: 'Area = πr² = 3.14 × 5² = 3.14 × 25 = 78.5 cm²',
-          topic: 'Geometry'
+          chapter: 'Geometry'
         }
       ],
       'Trigonometry': [
@@ -84,15 +99,15 @@ export function AssessmentMode({ config, onComplete }: AssessmentModeProps) {
           options: ['1', '0', '0.5', '√2/2'],
           correctAnswer: 0,
           explanation: 'sin(90°) = 1 (maximum value of sine function)',
-          topic: 'Trigonometry'
+          chapter: 'Trigonometry'
         }
       ]
     };
 
     let allQuestions: Question[] = [];
-    config.topics.forEach(topic => {
-      if (sampleQuestions[topic]) {
-        allQuestions = [...allQuestions, ...sampleQuestions[topic]];
+    config.chapters.forEach(chapter => {
+      if (sampleQuestions[chapter]) {
+        allQuestions = [...allQuestions, ...sampleQuestions[chapter]];
       }
     });
 
@@ -247,32 +262,32 @@ export function AssessmentMode({ config, onComplete }: AssessmentModeProps) {
             </div>
           </div>
 
-          {/* Topic-wise performance */}
+          {/* Chapter-wise performance */}
           <div className="mb-6">
-            <h3 className="text-lg mb-3 dark:text-white">Performance by Topic</h3>
+            <h3 className="text-lg mb-3 dark:text-white">Performance by Chapter</h3>
             <div className="space-y-2">
-              {config.topics.map((topic, idx) => {
-                const topicQuestions = questions.filter(q => q.topic === topic);
-                const topicCorrect = topicQuestions.filter((q, qIdx) => {
+              {config.chapters.map((chapter, idx) => {
+                const chapterQuestions = questions.filter(q => q.chapter === chapter);
+                const chapterCorrect = chapterQuestions.filter((q, qIdx) => {
                   const actualIdx = questions.indexOf(q);
                   return answers[actualIdx] === q.correctAnswer;
                 }).length;
-                const topicPercentage = topicQuestions.length > 0 
-                  ? Math.round((topicCorrect / topicQuestions.length) * 100)
+                const chapterPercentage = chapterQuestions.length > 0
+                  ? Math.round((chapterCorrect / chapterQuestions.length) * 100)
                   : 0;
 
                 return (
                   <div key={idx}>
                     <div className="flex justify-between text-sm mb-1">
-                      <span className="dark:text-white">{topic}</span>
-                      <span className={`${topicPercentage >= 60 ? 'text-green-600 dark:text-green-400' : 'text-orange-600 dark:text-orange-400'}`}>
-                        {topicCorrect}/{topicQuestions.length} ({topicPercentage}%)
+                      <span className="dark:text-white">{chapter}</span>
+                      <span className={`${chapterPercentage >= 60 ? 'text-green-600 dark:text-green-400' : 'text-orange-600 dark:text-orange-400'}`}>
+                        {chapterCorrect}/{chapterQuestions.length} ({chapterPercentage}%)
                       </span>
                     </div>
                     <div className="h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
                       <div
-                        className={`h-full ${topicPercentage >= 60 ? 'bg-green-500' : 'bg-orange-500'} rounded-full`}
-                        style={{ width: `${topicPercentage}%` }}
+                        className={`h-full ${chapterPercentage >= 60 ? 'bg-green-500' : 'bg-orange-500'} rounded-full`}
+                        style={{ width: `${chapterPercentage}%` }}
                       />
                     </div>
                   </div>
@@ -406,7 +421,7 @@ export function AssessmentMode({ config, onComplete }: AssessmentModeProps) {
       {/* Question */}
       <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-md border border-gray-100 dark:border-gray-700 mb-6">
         <div className={`inline-block px-3 py-1 ${colors.bg} ${colors.text} rounded-full text-sm mb-4`}>
-          {question.topic}
+          {question.chapter}
         </div>
         <h2 className="text-xl mb-6 dark:text-white">{question.question}</h2>
         

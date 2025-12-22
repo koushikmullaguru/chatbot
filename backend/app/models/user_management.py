@@ -6,6 +6,7 @@ import enum
 from datetime import datetime
 
 from ..core.database import Base
+from ..utils.grade_utils import normalize_grade
 
 
 class UserType(str, enum.Enum):
@@ -43,6 +44,13 @@ class User(Base):
     teacher_content_units = relationship("TeacherContentUnit", back_populates="created_by")
     assessments = relationship("Assessment", back_populates="created_by_user")
     user_sessions = relationship("UserSession", back_populates="user")
+    
+    @property
+    def normalized_grade(self):
+        """Return the grade in normalized format (Grade X)"""
+        if self.grade:
+            return normalize_grade(self.grade)
+        return None
 
 
 class StudentProfile(Base):
@@ -77,6 +85,13 @@ class StudentProfile(Base):
     report_cards = relationship("ReportCard", back_populates="student_profile")
     assessment_results = relationship("AssessmentResult", back_populates="student_profile")
     study_sessions = relationship("StudySession", back_populates="student_profile")
+    
+    @property
+    def normalized_grade(self):
+        """Return the grade in normalized format (Grade X)"""
+        if self.grade:
+            return normalize_grade(self.grade)
+        return None
 
 
 class ParentStudentRelation(Base):

@@ -1,89 +1,197 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Quiz, QuizQuestion } from '../types';
-import { Check, X, ArrowRight, RotateCcw, Trophy } from 'lucide-react';
+import { Check, X, ArrowRight, RotateCcw, Trophy, Loader } from 'lucide-react';
+import { generateQuiz } from '../api/service';
 
 interface QuizModeProps {
   onComplete: () => void;
+  quizParams?: {
+    class_id: string;
+    subject_id: string;
+    chapter_id: string;
+    difficulty: string;
+    num_questions: number;
+    question_types: string[];
+    duration: number;
+  };
 }
 
-export function QuizMode({ onComplete }: QuizModeProps) {
+// Define the API response interface
+interface QuizApiResponse {
+  id?: string;
+  class?: string;
+  subject?: string;
+  chapter?: string;
+  difficulty?: string;
+  num_questions?: number;
+  duration?: number;
+  questions: QuizQuestion[];
+}
+
+export function QuizMode({ onComplete, quizParams }: QuizModeProps) {
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [answers, setAnswers] = useState<Record<string, string | string[]>>({});
   const [showResults, setShowResults] = useState(false);
   const [shortAnswerInput, setShortAnswerInput] = useState('');
+  const [quiz, setQuiz] = useState<Quiz | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  // Sample quiz
-  const quiz: Quiz = {
-    id: '1',
-    title: 'Science Quiz - Photosynthesis',
-    totalQuestions: 5,
-    questions: [
-      {
-        id: 'q1',
-        type: 'single-choice',
-        question: 'What is the primary function of photosynthesis?',
-        options: [
-          'To produce oxygen for animals',
-          'To convert light energy into chemical energy',
-          'To absorb carbon dioxide',
-          'To create chlorophyll'
-        ],
-        correctAnswer: 'To convert light energy into chemical energy',
-        explanation: 'Photosynthesis primarily converts light energy into chemical energy stored in glucose molecules.'
-      },
-      {
-        id: 'q2',
-        type: 'multiple-choice',
-        question: 'Which of the following are required for photosynthesis? (Select all that apply)',
-        options: [
-          'Sunlight',
-          'Carbon dioxide',
-          'Oxygen',
-          'Water',
-          'Nitrogen'
-        ],
-        correctAnswer: ['Sunlight', 'Carbon dioxide', 'Water'],
-        explanation: 'Photosynthesis requires sunlight, carbon dioxide, and water. Oxygen is produced as a byproduct.'
-      },
-      {
-        id: 'q3',
-        type: 'short-answer',
-        question: 'In which part of the plant cell does photosynthesis occur?',
-        correctAnswer: 'chloroplast',
-        explanation: 'Photosynthesis occurs in the chloroplasts, which contain chlorophyll.'
-      },
-      {
-        id: 'q4',
-        type: 'single-choice',
-        question: 'What is the chemical formula for glucose produced during photosynthesis?',
-        options: [
-          'CO2',
-          'H2O',
-          'C6H12O6',
-          'O2'
-        ],
-        correctAnswer: 'C6H12O6',
-        explanation: 'Glucose has the chemical formula C6H12O6 (6 carbon, 12 hydrogen, 6 oxygen atoms).'
-      },
-      {
-        id: 'q5',
-        type: 'multiple-choice',
-        question: 'Which colors of light are most absorbed by chlorophyll? (Select all that apply)',
-        options: [
-          'Red',
-          'Blue',
-          'Green',
-          'Yellow'
-        ],
-        correctAnswer: ['Red', 'Blue'],
-        explanation: 'Chlorophyll primarily absorbs red and blue light, while reflecting green light (which is why plants appear green).'
+  useEffect(() => {
+    const fetchQuiz = async () => {
+      if (!quizParams) {
+        setError('No quiz parameters provided');
+        setIsLoading(false);
+        return;
       }
-    ]
-  };
+
+      try {
+        setIsLoading(true);
+        setError(null);
+        
+        // Call the generate quiz API
+        const response = await generateQuiz(quizParams) as QuizApiResponse;
+        
+        // Log the entire response for debugging
+        console.log('Full API response:', response);
+        
+        if (response && response.questions && response.questions.length > 0) {
+          // Transform the API response to match the Quiz interface
+          const transformedQuiz: Quiz = {
+            id: response.id || `quiz-${Date.now()}`,
+            title: `${response.subject || 'General'} Quiz - ${response.chapter || 'General Knowledge'}`,
+            totalQuestions: response.questions.length,
+            questions: response.questions.map((q: any, index: number) => {
+              // Log the question object for debugging
+              console.log(`Question ${index + 1}:`, q);
+              console.log(`Question ${index + 1} keys:`, Object.keys(q));
+              
+              // Ensure question text is properly extracted
+              let questionText = '';
+              if (q.question) {
+                questionText = q.question;
+              } else if (q.text) {
+                questionText = q.text;
+              } else if (q.title) {
+                questionText = q.title;
+              } else if (q.prompt) {
+                questionText = q.prompt;
+              }
+              
+              // Log if question text is missing
+              if (!questionText) {
+                console.warn(`Question ${index + 1} is missing question text. Available fields:`, Object.keys(q));
+              }
+              
+              // Log options structure
+              console.log(`Question ${index + 1} options:`, q.options);
+              
+              // Process options to ensure they're strings
+              let processedOptions: string[] = [];
+              if (q.options) {
+                if (Array.isArray(q.options)) {
+                  processedOptions = q.options.map((option: any) =>
+                    typeof option === 'string' ? option : String(option)
+                  );
+                } else if (typeof q.options === 'object') {
+                  // If options is an object, try to extract values
+                  processedOptions = Object.values(q.options).map((val: any) =>
+                    typeof val === 'string' ? val : String(val)
+                  );
+                }
+              }
+              
+              console.log(`Question ${index + 1} processed options:`, processedOptions);
+              console.log(`Question ${index + 1} correctAnswer:`, q.correctAnswer);
+              console.log(`Question ${index + 1} correctAnswer type:`, typeof q.correctAnswer);
+              
+              // Process correctAnswer to ensure it's in the right format
+              let processedCorrectAnswer = q.correctAnswer;
+              if (q.type === 'multiple-choice' && typeof q.correctAnswer === 'string') {
+                // If correctAnswer is a string but question type is multiple-choice,
+                // it might need to be converted to an array
+                try {
+                  processedCorrectAnswer = JSON.parse(q.correctAnswer);
+                } catch (e) {
+                  // If parsing fails, keep it as is
+                  console.warn(`Failed to parse correctAnswer for question ${index + 1}:`, e);
+                }
+              }
+              
+              console.log(`Question ${index + 1} processed correctAnswer:`, processedCorrectAnswer);
+              
+              return {
+                id: q.id || `q${index + 1}`,
+                type: q.type || 'single-choice',
+                question: questionText,
+                options: processedOptions,
+                correctAnswer: processedCorrectAnswer || '',
+                explanation: q.explanation || ''
+              };
+            })
+          };
+          
+          setQuiz(transformedQuiz);
+        } else {
+          setError('Failed to generate quiz questions');
+        }
+      } catch (err) {
+        console.error('Error generating quiz:', err);
+        setError('Failed to generate quiz. Please try again.');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchQuiz();
+  }, [quizParams]);
+
+  // Show loading state
+  if (isLoading) {
+    return (
+      <div className="h-full flex items-center justify-center bg-gradient-to-br from-green-50 to-blue-50 dark:from-gray-900 dark:to-gray-800">
+        <div className="text-center">
+          <Loader className="w-12 h-12 animate-spin text-blue-500 mx-auto mb-4" />
+          <p className="text-gray-600 dark:text-gray-400">Generating quiz...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Show error state
+  if (error) {
+    return (
+      <div className="h-full flex items-center justify-center bg-gradient-to-br from-green-50 to-blue-50 dark:from-gray-900 dark:to-gray-800">
+        <div className="text-center max-w-md">
+          <div className="text-red-500 text-5xl mb-4">⚠️</div>
+          <h2 className="text-2xl mb-2 dark:text-white">Error</h2>
+          <p className="text-gray-600 dark:text-gray-400 mb-6">{error}</p>
+          <button
+            onClick={onComplete}
+            className="px-6 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
+          >
+            Back to Chat
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // Show empty state if no quiz
+  if (!quiz) {
+    return (
+      <div className="h-full flex items-center justify-center bg-gradient-to-br from-green-50 to-blue-50 dark:from-gray-900 dark:to-gray-800">
+        <div className="text-center">
+          <p className="text-gray-600 dark:text-gray-400">No quiz available</p>
+        </div>
+      </div>
+    );
+  }
 
   const currentQuestion = quiz.questions[currentQuestionIndex];
 
   const handleSingleChoice = (option: string) => {
+    console.log(`Single choice selected: ${option} for question ${currentQuestion.id}`);
     setAnswers(prev => ({ ...prev, [currentQuestion.id]: option }));
   };
 
@@ -93,10 +201,15 @@ export function QuizMode({ onComplete }: QuizModeProps) {
       ? currentAnswers.filter(a => a !== option)
       : [...currentAnswers, option];
     
+    console.log(`Multiple choice selected: ${option} for question ${currentQuestion.id}`);
+    console.log(`Current answers:`, currentAnswers);
+    console.log(`New answers:`, newAnswers);
+    
     setAnswers(prev => ({ ...prev, [currentQuestion.id]: newAnswers }));
   };
 
   const handleShortAnswer = () => {
+    console.log(`Short answer submitted: ${shortAnswerInput.trim()} for question ${currentQuestion.id}`);
     setAnswers(prev => ({ ...prev, [currentQuestion.id]: shortAnswerInput.trim() }));
     setShortAnswerInput('');
   };
@@ -117,20 +230,60 @@ export function QuizMode({ onComplete }: QuizModeProps) {
   const checkAnswer = (question: QuizQuestion): boolean => {
     const userAnswer = answers[question.id];
     
+    // Log for debugging
+    console.log(`Checking answer for question ${question.id}:`);
+    console.log(`User answer:`, userAnswer);
+    console.log(`Correct answer:`, question.correctAnswer);
+    console.log(`Question type:`, question.type);
+    
     if (question.type === 'short-answer') {
-      const correctAnswer = (question.correctAnswer as string).toLowerCase().trim();
+      let correctAnswer = '';
+      if (typeof question.correctAnswer === 'string') {
+        correctAnswer = question.correctAnswer.toLowerCase().trim();
+      } else if (question.correctAnswer) {
+        correctAnswer = String(question.correctAnswer).toLowerCase().trim();
+      }
+      
       const userAnswerStr = (userAnswer as string || '').toLowerCase().trim();
-      return userAnswerStr.includes(correctAnswer) || correctAnswer.includes(userAnswerStr);
+      const isCorrect = userAnswerStr.includes(correctAnswer) || correctAnswer.includes(userAnswerStr);
+      console.log(`Short answer comparison: "${userAnswerStr}" vs "${correctAnswer}" = ${isCorrect}`);
+      return isCorrect;
     }
     
     if (question.type === 'multiple-choice') {
-      const correctAnswers = question.correctAnswer as string[];
+      let correctAnswers: string[] = [];
+      if (Array.isArray(question.correctAnswer)) {
+        correctAnswers = question.correctAnswer;
+      } else if (typeof question.correctAnswer === 'string') {
+        try {
+          // Try to parse if it's a JSON string
+          correctAnswers = JSON.parse(question.correctAnswer);
+        } catch (e) {
+          // If parsing fails, treat as a single answer
+          correctAnswers = [question.correctAnswer];
+        }
+      } else if (question.correctAnswer) {
+        correctAnswers = [String(question.correctAnswer)];
+      }
+      
       const userAnswers = (userAnswer as string[]) || [];
-      return correctAnswers.length === userAnswers.length &&
+      const isCorrect = correctAnswers.length === userAnswers.length &&
         correctAnswers.every(a => userAnswers.includes(a));
+      console.log(`Multiple choice comparison:`, { correctAnswers, userAnswers, isCorrect });
+      return isCorrect;
     }
     
-    return userAnswer === question.correctAnswer;
+    // For single choice
+    let correctAnswer = '';
+    if (typeof question.correctAnswer === 'string') {
+      correctAnswer = question.correctAnswer;
+    } else if (question.correctAnswer) {
+      correctAnswer = String(question.correctAnswer);
+    }
+    
+    const isCorrect = String(userAnswer) === correctAnswer;
+    console.log(`Single choice comparison: "${userAnswer}" vs "${correctAnswer}" = ${isCorrect}`);
+    return isCorrect;
   };
 
   const calculateScore = () => {
@@ -206,7 +359,7 @@ export function QuizMode({ onComplete }: QuizModeProps) {
                     </div>
                     <div className="flex-1">
                       <h4 className="mb-3 dark:text-white">
-                        <span className="text-gray-500 dark:text-gray-400">Q{index + 1}.</span> {question.question}
+                        <span className="text-gray-500 dark:text-gray-400">Q{index + 1}.</span> {question.question || "Question text not available"}
                       </h4>
                       
                       {question.type === 'short-answer' ? (
@@ -217,22 +370,47 @@ export function QuizMode({ onComplete }: QuizModeProps) {
                           </div>
                           <div className="p-3 bg-green-50 dark:bg-green-900/30 rounded-lg">
                             <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">Correct answer:</p>
-                            <p className="text-green-700 dark:text-green-400">{question.correctAnswer as string}</p>
+                            <p className="text-green-700 dark:text-green-400">
+                              {typeof question.correctAnswer === 'string'
+                                ? question.correctAnswer
+                                : String(question.correctAnswer)}
+                            </p>
                           </div>
                         </div>
                       ) : (
                         <div className="space-y-2">
-                          {question.options?.map((option) => {
+                          {question.options?.map((option, index) => {
                             const isUserAnswer = question.type === 'multiple-choice'
                               ? (userAnswer as string[])?.includes(option)
                               : userAnswer === option;
-                            const isCorrectAnswer = question.type === 'multiple-choice'
-                              ? (question.correctAnswer as string[]).includes(option)
-                              : question.correctAnswer === option;
+                            let isCorrectAnswer = false;
+                            if (question.type === 'multiple-choice') {
+                              let correctAnswers: string[] = [];
+                              if (Array.isArray(question.correctAnswer)) {
+                                correctAnswers = question.correctAnswer;
+                              } else if (typeof question.correctAnswer === 'string') {
+                                try {
+                                  correctAnswers = JSON.parse(question.correctAnswer);
+                                } catch (e) {
+                                  correctAnswers = [question.correctAnswer];
+                                }
+                              } else if (question.correctAnswer) {
+                                correctAnswers = [String(question.correctAnswer)];
+                              }
+                              isCorrectAnswer = correctAnswers.includes(option);
+                            } else {
+                              let correctAnswer = '';
+                              if (typeof question.correctAnswer === 'string') {
+                                correctAnswer = question.correctAnswer;
+                              } else if (question.correctAnswer) {
+                                correctAnswer = String(question.correctAnswer);
+                              }
+                              isCorrectAnswer = correctAnswer === option;
+                            }
                             
                             return (
                               <div
-                                key={option}
+                                key={option || index}
                                 className={`p-3 rounded-lg border-2 ${
                                   isCorrectAnswer
                                     ? 'border-green-500 bg-green-50 dark:bg-green-900/30'
@@ -299,7 +477,9 @@ export function QuizMode({ onComplete }: QuizModeProps) {
               {currentQuestion.type === 'multiple-choice' && 'Multiple Choice - Select all that apply'}
               {currentQuestion.type === 'short-answer' && 'Short Answer'}
             </div>
-            <h3 className="text-2xl dark:text-white">{currentQuestion.question}</h3>
+            <h3 className="text-2xl dark:text-white">
+              {currentQuestion.question || "Question text not available"}
+            </h3>
           </div>
 
           {/* Answer Options */}
@@ -315,14 +495,14 @@ export function QuizMode({ onComplete }: QuizModeProps) {
                 />
               </div>
             ) : (
-              currentQuestion.options?.map((option) => {
+              currentQuestion.options?.map((option, index) => {
                 const isSelected = currentQuestion.type === 'multiple-choice'
                   ? (answers[currentQuestion.id] as string[])?.includes(option)
                   : answers[currentQuestion.id] === option;
 
                 return (
                   <button
-                    key={option}
+                    key={option || index}
                     onClick={() => {
                       if (currentQuestion.type === 'multiple-choice') {
                         handleMultipleChoice(option);

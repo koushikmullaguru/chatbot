@@ -1,21 +1,27 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { BookOpen, Clock, Target, Brain, Award, FileText, CheckCircle, AlertCircle } from 'lucide-react';
+import { getSubjectsByClass, generateQuiz } from '../api/service';
 
 export type AssessmentType = 'worksheet' | 'quiz' | 'exam';
 
 export interface AssessmentConfig {
   type: AssessmentType;
   subject: string;
-  topics: string[];
+  subjectId: string;
+  chapters: string[];
+  chapterIds: string[];
+  classId: string;
   duration: number;
   questionCount: number;
   difficulty: 'easy' | 'medium' | 'hard';
   includeExplanations?: boolean;
+  questions?: any[];
 }
 
 interface AssessmentSetupProps {
   type: AssessmentType;
   onStartAssessment: (config: AssessmentConfig) => void;
+  userGrade?: string;
 }
 
 const assessmentInfo = {
@@ -79,40 +85,178 @@ const topicsBySubject: Record<string, string[]> = {
   'Computer Science': ['Programming', 'Data Structures', 'Algorithms', 'Databases', 'Networks']
 };
 
-export function AssessmentSetup({ type, onStartAssessment }: AssessmentSetupProps) {
+export function AssessmentSetup({ type, onStartAssessment, userGrade }: AssessmentSetupProps) {
   const info = assessmentInfo[type];
   const Icon = info.icon;
   
-  const [subject, setSubject] = useState('Mathematics');
-  const [selectedTopics, setSelectedTopics] = useState<string[]>([]);
+  const [subjects, setSubjects] = useState<Array<{id: string, name: string}>>([]);
+  const [subject, setSubject] = useState<{id: string, name: string}>({id: '', name: 'Mathematics'});
+  const [chapters, setChapters] = useState<Array<{id: string, name: string}>>([]);
+  const [selectedChapters, setSelectedChapters] = useState<Array<{id: string, name: string}>>([]);
+  const [classId, setClassId] = useState<string>('');
   const [duration, setDuration] = useState(info.defaultDuration);
   const [questionCount, setQuestionCount] = useState(info.defaultQuestions);
   const [difficulty, setDifficulty] = useState<'easy' | 'medium' | 'hard'>('medium');
   const [includeExplanations, setIncludeExplanations] = useState(type === 'worksheet');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [chaptersLoading, setChaptersLoading] = useState(false);
 
-  const toggleTopic = (topic: string) => {
-    setSelectedTopics(prev =>
-      prev.includes(topic)
-        ? prev.filter(t => t !== topic)
-        : [...prev, topic]
+  const toggleChapter = (chapter: {id: string, name: string}) => {
+    setSelectedChapters(prev =>
+      prev.some(c => c.id === chapter.id)
+        ? prev.filter(c => c.id !== chapter.id)
+        : [...prev, chapter]
     );
   };
 
-  const handleStart = () => {
-    if (selectedTopics.length === 0) {
-      alert('Please select at least one topic');
+  // Fetch chapters based on selected subject
+  useEffect(() => {
+    const fetchChapters = async () => {
+      if (!subject || !subject.id) {
+        setChapters([]);
+        return;
+      }
+
+      try {
+        setChaptersLoading(true);
+        
+        // Get chapters for the selected subject
+        const response = await fetch(`http://localhost:8000/api/v1/academic/chapters?subject_id=${encodeURIComponent(subject.id)}`);
+        
+        if (response.ok) {
+          const data = await response.json();
+          if (Array.isArray(data)) {
+            setChapters(data.length > 0 ? data : []);
+          } else {
+            // Fallback to default chapters if API response is invalid
+            setChapters([]);
+          }
+        } else {
+          console.error('Failed to fetch chapters:', response.statusText);
+          setChapters([]);
+        }
+      } catch (err) {
+        console.error('Failed to fetch chapters:', err);
+        setChapters([]);
+      } finally {
+        setChaptersLoading(false);
+      }
+    };
+
+    fetchChapters();
+  }, [subject]);
+
+  // Fetch subjects based on user's grade
+  useEffect(() => {
+    const fetchSubjects = async () => {
+      if (!userGrade) {
+        // Fallback to default subjects if no grade is provided
+        setSubjects([{id: 'default', name: 'Mathematics'}]);
+        setClassId('default');
+        return;
+      }
+
+      try {
+        setLoading(true);
+        setError(null);
+        
+        // Format grade for API (remove spaces, convert to lowercase if needed)
+        const formattedGrade = userGrade.replace(/\s+/g, '');
+        const response = await getSubjectsByClass(formattedGrade);
+        
+        if (response && Array.isArray(response)) {
+          // Store the subjects with their IDs
+          setSubjects(response);
+          
+          // Set first subject as default if current subject is not in the list
+          if (response.length > 0 && (!subject.id || !response.some(s => s.id === subject.id))) {
+            setSubject(response[0]);
+          }
+          
+          // Try to get the class ID from the API response
+          if (response.length > 0 && response[0].class_id) {
+            setClassId(response[0].class_id);
+          } else {
+            setClassId(formattedGrade);
+          }
+        } else {
+          // Fallback to default subjects if API response is invalid
+          setSubjects([{id: 'default', name: 'Mathematics'}]);
+          setClassId('default');
+        }
+      } catch (err) {
+        console.error('Failed to fetch subjects:', err);
+        setError('Failed to load subjects. Using default subjects.');
+        // Fallback to default subjects on error
+        setSubjects([{id: 'default', name: 'Mathematics'}]);
+        setClassId('default');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchSubjects();
+  }, [userGrade]);
+
+  const handleStart = async () => {
+    if (selectedChapters.length === 0) {
+      alert('Please select at least one chapter');
       return;
     }
 
-    onStartAssessment({
-      type,
-      subject,
-      topics: selectedTopics,
-      duration,
-      questionCount,
-      difficulty,
-      includeExplanations
-    });
+    try {
+      // For now, we'll just use the first chapter for the API call
+      // In a real implementation, you might want to make multiple API calls or modify the backend
+      const chapter = selectedChapters[0];
+      
+      // Generate quiz using the API
+      const quizData = {
+        class_id: classId,
+        subject_id: subject.id,
+        chapter_id: chapter.id,
+        difficulty: difficulty,
+        num_questions: questionCount,
+        question_types: ['multiple-choice'],
+        duration: duration
+      };
+      
+      const response: any = await generateQuiz(quizData);
+      console.log('Generated quiz:', response);
+      
+      // Pass the generated quiz data to the assessment component
+      onStartAssessment({
+        type,
+        subject: subject.name,
+        subjectId: subject.id,
+        chapters: selectedChapters.map(c => c.name),
+        chapterIds: selectedChapters.map(c => c.id),
+        classId: classId,
+        duration,
+        questionCount,
+        difficulty,
+        includeExplanations,
+        // Include the generated questions if available
+        questions: response.questions || []
+      });
+    } catch (error) {
+      console.error('Error generating quiz:', error);
+      alert('Failed to generate quiz. Please try again.');
+      
+      // Fallback to starting assessment without generated questions
+      onStartAssessment({
+        type,
+        subject: subject.name,
+        subjectId: subject.id,
+        chapters: selectedChapters.map(c => c.name),
+        chapterIds: selectedChapters.map(c => c.id),
+        classId: classId,
+        duration,
+        questionCount,
+        difficulty,
+        includeExplanations
+      });
+    }
   };
 
   const getColorClasses = () => {
@@ -214,18 +358,28 @@ export function AssessmentSetup({ type, onStartAssessment }: AssessmentSetupProp
               <BookOpen className="w-5 h-5 text-gray-400" />
               Select Subject
             </label>
-            <select
-              value={subject}
-              onChange={(e) => {
-                setSubject(e.target.value);
-                setSelectedTopics([]);
-              }}
-              className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
-            >
-              {subjects.map(subj => (
-                <option key={subj} value={subj}>{subj}</option>
-              ))}
-            </select>
+            {loading ? (
+              <div className="flex items-center justify-center py-3">
+                <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-500"></div>
+                <span className="ml-2 text-gray-600 dark:text-gray-400">Loading subjects...</span>
+              </div>
+            ) : error ? (
+              <div className="text-red-500 text-sm py-2">{error}</div>
+            ) : (
+              <select
+                value={subject.id}
+                onChange={(e) => {
+                  const selectedSubject = subjects.find(s => s.id === e.target.value) || subjects[0];
+                  setSubject(selectedSubject);
+                  setSelectedChapters([]);
+                }}
+                className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
+              >
+                {subjects.map(subj => (
+                  <option key={subj.id} value={subj.id}>{subj.name}</option>
+                ))}
+              </select>
+            )}
           </div>
 
           {/* Duration & Questions */}
@@ -312,35 +466,46 @@ export function AssessmentSetup({ type, onStartAssessment }: AssessmentSetupProp
           )}
         </div>
 
-        {/* Right Column - Topic Selection */}
+        {/* Right Column - Chapter Selection */}
         <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-md border border-gray-100 dark:border-gray-700">
           <h3 className="mb-4 dark:text-white">
-            Select Topics
-            {selectedTopics.length > 0 && (
+            Select Chapters
+            {selectedChapters.length > 0 && (
               <span className={`ml-2 text-sm ${colors.text}`}>
-                ({selectedTopics.length} selected)
+                ({selectedChapters.length} selected)
               </span>
             )}
           </h3>
           <div className="space-y-2 max-h-96 overflow-y-auto">
-            {topicsBySubject[subject]?.map((topic) => (
-              <label
-                key={topic}
-                className={`flex items-center gap-3 p-3 rounded-lg border-2 cursor-pointer transition-all ${
-                  selectedTopics.includes(topic)
-                    ? `${colors.border} ${colors.bg}`
-                    : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
-                }`}
-              >
-                <input
-                  type="checkbox"
-                  checked={selectedTopics.includes(topic)}
-                  onChange={() => toggleTopic(topic)}
-                  className="w-5 h-5 text-blue-500 rounded"
-                />
-                <span className="dark:text-white">{topic}</span>
-              </label>
-            ))}
+            {chaptersLoading ? (
+              <div className="flex items-center justify-center py-3">
+                <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-500"></div>
+                <span className="ml-2 text-gray-600 dark:text-gray-400">Loading chapters...</span>
+              </div>
+            ) : chapters.length > 0 ? (
+              chapters.map((chapter) => (
+                <label
+                  key={chapter.id}
+                  className={`flex items-center gap-3 p-3 rounded-lg border-2 cursor-pointer transition-all ${
+                    selectedChapters.some(c => c.id === chapter.id)
+                      ? `${colors.border} ${colors.bg}`
+                      : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
+                  }`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={selectedChapters.some(c => c.id === chapter.id)}
+                    onChange={() => toggleChapter(chapter)}
+                    className="w-5 h-5 text-blue-500 rounded"
+                  />
+                  <span className="dark:text-white">{chapter.name}</span>
+                </label>
+              ))
+            ) : (
+              <div className="text-center py-4 text-gray-500 dark:text-gray-400">
+                {subject ? `No chapters found for ${subject}` : 'Please select a subject first'}
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -349,7 +514,7 @@ export function AssessmentSetup({ type, onStartAssessment }: AssessmentSetupProp
       <div className="flex justify-center">
         <button
           onClick={handleStart}
-          disabled={selectedTopics.length === 0}
+          disabled={selectedChapters.length === 0}
           className={`px-8 py-4 ${colors.button} text-white rounded-xl hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-3 text-lg`}
         >
           <Icon className="w-6 h-6" />

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { BarChart3, Users, GraduationCap, TrendingUp, BookOpen, Award, AlertCircle, CheckCircle, Eye } from 'lucide-react';
 import { StudentPerformanceReport } from './StudentPerformanceReport';
+import { normalizeGrade } from '../utils/gradeUtils';
 
 interface TeacherInsightsProps {
   teacherRole: 'subject-teacher' | 'class-head' | 'principal';
@@ -86,7 +87,7 @@ export function TeacherInsights({ teacherRole, teacherSubject, teacherClass, onB
         studentId={selectedStudent.id}
         studentName={selectedStudent.name}
         rollNo={selectedStudent.rollNo}
-        classInfo={`Class ${selectedClass}, Section ${selectedSection}`}
+        classInfo={`${normalizeGrade(selectedClass)}, Section ${selectedSection}`}
         subject={selectedSubject}
         onBack={() => setSelectedStudent(null)}
       />
@@ -284,7 +285,7 @@ export function TeacherInsights({ teacherRole, teacherSubject, teacherClass, onB
               {classPerformance.map((cls) => (
                 <div key={cls.class} className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
                   <div className="flex items-center justify-between mb-3">
-                    <h3 className="dark:text-white">Class {cls.class}</h3>
+                    <h3 className="dark:text-white">{normalizeGrade(cls.class)}</h3>
                     <span className={`px-3 py-1 rounded-full text-xs ${
                       cls.avgScore >= 75 ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' :
                       cls.avgScore >= 65 ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' :
@@ -324,7 +325,7 @@ export function TeacherInsights({ teacherRole, teacherSubject, teacherClass, onB
           /* Section Level Performance */
           <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-md border border-gray-100 dark:border-gray-700">
             <h2 className="text-lg mb-4 dark:text-white">
-              Section-wise Performance - Class {selectedClass} - {selectedSubject}
+              Section-wise Performance - {normalizeGrade(selectedClass)} - {selectedSubject}
             </h2>
             <div className="grid md:grid-cols-2 gap-4">
               {sectionPerformance.map((section) => (
@@ -374,7 +375,7 @@ export function TeacherInsights({ teacherRole, teacherSubject, teacherClass, onB
           /* Student Level Performance */
           <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-md border border-gray-100 dark:border-gray-700">
             <h2 className="text-lg mb-4 dark:text-white">
-              Student Performance - Class {selectedClass}, Section {selectedSection} - {selectedSubject}
+              Student Performance - {normalizeGrade(selectedClass)}, Section {selectedSection} - {selectedSubject}
             </h2>
             <div className="overflow-x-auto">
               <table className="w-full">

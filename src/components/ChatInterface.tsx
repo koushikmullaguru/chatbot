@@ -7,7 +7,6 @@ import { RevisionSetup } from './RevisionSetup';
 import { AssessmentSetup, AssessmentConfig } from './AssessmentSetup';
 import { AssessmentMode } from './AssessmentMode';
 import { TeacherModeSelector } from './TeacherModeSelector';
-import { StudentSelector } from './StudentSelector';
 import { ParentDashboard } from './ParentDashboard';
 import { TeacherClassSelector, ClassConfig } from './TeacherClassSelector';
 import { ContentCreation } from './ContentCreation';
@@ -26,6 +25,8 @@ import { StudentProfileScreen } from './StudentProfileScreen';
 import { PreparationPlanner } from './PreparationPlanner';
 import { PlannerMode } from './PlannerMode';
 import { User as UserType, StudentProfile, Message, ChatMode, Theme, TeacherMode, ExamConfig, HomeworkTopic, RevisionTopic } from '../types';
+// We don't need to import the student profile service since we're creating the profile object directly
+import { chatService, ChatSession as ApiChatSession } from '../api/chatService';
 
 interface ChatInterfaceProps {
   user: UserType;
@@ -50,6 +51,8 @@ export function ChatInterface({ user, selectedProfile, onSwitchProfile, onLogout
   const [assessmentConfig, setAssessmentConfig] = useState<AssessmentConfig | null>(null);
   const [showProfileScreen, setShowProfileScreen] = useState(false);
   const [showPreparationPlanner, setShowPreparationPlanner] = useState(false);
+  const [currentChatSession, setCurrentChatSession] = useState<ApiChatSession | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
   
   // Planner tasks state - shared between PlannerMode and PreparationPlanner
   const [plannerTasks, setPlannerTasks] = useState<Array<{
@@ -171,14 +174,34 @@ export function ChatInterface({ user, selectedProfile, onSwitchProfile, onLogout
           'Give me revision notes on this chapter',
           'Test me on what I\'ve learned'
         ]
+      },
+      discussion: {
+        content: `I'd love to have a discussion with you! This is a great way to explore ideas and deepen your understanding.\n\nWhat would you like to discuss? Feel free to share your thoughts, ask questions, or even challenge ideas - that's how real learning happens!`,
+        suggestedQuestions: [
+          'What are your thoughts on this topic?',
+          'Can you help me understand this from a different perspective?',
+          'How does this connect to our previous discussions?',
+          'What are some real-world applications of this concept?'
+        ]
+      },
+      planner: {
+        content: `Let's get organized! Planning is key to academic success.\n\nWhat would you like to plan? I can help you with:\n• Study schedules\n• Assignment deadlines\n• Exam preparation\n• Project timelines\n\nWhat's on your mind?`,
+        suggestedQuestions: [
+          'Can you help me create a study schedule for this week?',
+          'How should I prioritize my assignments?',
+          'What\'s a good timeline for preparing for my exams?',
+          'Can you help me break down this big project?'
+        ]
       }
     };
 
     return responses[mode];
   };
 
-  const handleSendMessage = (content: string) => {
+  const handleSendMessage = async (content: string) => {
     if (!content.trim()) return;
+    
+    setIsLoading(true);
 
     // Add user message
     const userMessage: Message = {
@@ -190,21 +213,80 @@ export function ChatInterface({ user, selectedProfile, onSwitchProfile, onLogout
 
     setMessages(prev => [...prev, userMessage]);
 
-    // Simulate AI response with delay
-    setTimeout(() => {
-      const { content: aiContent, suggestedQuestions } = generateAIResponse(content, currentMode);
-      const aiMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        content: aiContent,
-        sender: 'ai',
-        timestamp: new Date(),
-        suggestedQuestions,
-      };
+    try {
+      // If no chat session exists, create one
+      if (!currentChatSession && selectedProfile) {
+        const newSession = await chatService.createChatSession({
+          student_profile_id: selectedProfile.id,
+          mode: currentMode,
+          title: `${currentMode.toUpperCase()} Session`
+        });
+        setCurrentChatSession(newSession);
+        
+        // Send message to API
+        const aiMessage = await chatService.sendMessage(newSession.id, { content });
+        
+        // Convert API message to frontend format
+        const formattedAiMessage: Message = {
+          id: aiMessage.id,
+          content: aiMessage.content,
+          sender: 'ai',
+          timestamp: new Date(aiMessage.timestamp),
+          suggestedQuestions: aiMessage.suggested_questions
+        };
+        
+        setMessages(prev => [...prev, formattedAiMessage]);
+        // Refresh recent chats after creating a new session
+        refreshRecentChats();
+      } else if (currentChatSession) {
+        // Send message to existing session
+        const aiMessage = await chatService.sendMessage(currentChatSession.id, { content });
+        
+        // Convert API message to frontend format
+        const formattedAiMessage: Message = {
+          id: aiMessage.id,
+          content: aiMessage.content,
+          sender: 'ai',
+          timestamp: new Date(aiMessage.timestamp),
+          suggestedQuestions: aiMessage.suggested_questions
+        };
+        
+        setMessages(prev => [...prev, formattedAiMessage]);
+      } else {
+        // Fallback to local response if no profile or session
+        setTimeout(() => {
+          const { content: aiContent, suggestedQuestions } = generateAIResponse(content, currentMode);
+          const aiMessage: Message = {
+            id: (Date.now() + 1).toString(),
+            content: aiContent,
+            sender: 'ai',
+            timestamp: new Date(),
+            suggestedQuestions,
+          };
 
-      setMessages(prev => [...prev, aiMessage]);
-    }, 1000);
+          setMessages(prev => [...prev, aiMessage]);
+        }, 1000);
+      }
+    } catch (error) {
+      console.error('Error sending message:', error);
+      
+      // Fallback to local response on error
+      setTimeout(() => {
+        const { content: aiContent, suggestedQuestions } = generateAIResponse(content, currentMode);
+        const aiMessage: Message = {
+          id: (Date.now() + 1).toString(),
+          content: aiContent,
+          sender: 'ai',
+          timestamp: new Date(),
+          suggestedQuestions,
+        };
 
-    setShowModeSetup(false);
+        setMessages(prev => [...prev, aiMessage]);
+      }, 1000);
+    } finally {
+      setIsLoading(false);
+      setShowModeSetup(false);
+    }
   };
 
   const handleModeChange = (mode: ChatMode) => {
@@ -232,6 +314,7 @@ export function ChatInterface({ user, selectedProfile, onSwitchProfile, onLogout
 
   const handleNewChat = () => {
     setMessages([]);
+    setCurrentChatSession(null);
     setShowModeSetup(true);
     setTeacherMode(null);
     setShowTeacherModes(user.userType === 'teacher');
@@ -239,6 +322,57 @@ export function ChatInterface({ user, selectedProfile, onSwitchProfile, onLogout
     setShowClassSelector(false);
     setShowInsights(false);
   };
+
+  const handleSelectChat = async (chatSession: ApiChatSession) => {
+    setIsLoading(true);
+    try {
+      // Set the current chat session
+      setCurrentChatSession(chatSession);
+      setCurrentMode(chatSession.mode as ChatMode);
+      
+      // Load messages for this chat session
+      const chatWithMessages = await chatService.getChatSession(chatSession.id);
+      
+      // Convert API messages to frontend format
+      const formattedMessages: Message[] = chatWithMessages.messages.map((msg: any) => ({
+        id: msg.id,
+        content: msg.content,
+        sender: msg.sender_type === 'user' ? 'user' : 'ai',
+        timestamp: new Date(msg.timestamp),
+        suggestedQuestions: msg.suggested_questions
+      }));
+      
+      setMessages(formattedMessages);
+      setShowModeSetup(false);
+      setSidebarOpen(false); // Close sidebar on mobile after selecting a chat
+    } catch (error) {
+      console.error('Error loading chat session:', error);
+      // Show error message to user
+      const errorMessage: Message = {
+        id: Date.now().toString(),
+        content: "Sorry, I couldn't load this chat session. Please try again later.",
+        sender: 'ai',
+        timestamp: new Date(),
+      };
+      setMessages([errorMessage]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const refreshRecentChats = async () => {
+    // This function will be passed to ChatSidebar to refresh the chat list
+    // The actual implementation is in ChatSidebar, we just need to trigger it
+    // We'll use a state variable to trigger the refresh
+    setRefreshTrigger(prev => prev + 1);
+  };
+
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
+
+  // Pass the refresh trigger to ChatSidebar
+  useEffect(() => {
+    // This effect will run when refreshTrigger changes, which will trigger the ChatSidebar to refresh
+  }, [refreshTrigger]);
 
   const handleTeacherModeSelect = (mode: TeacherMode) => {
     setTeacherMode(mode);
@@ -290,13 +424,45 @@ export function ChatInterface({ user, selectedProfile, onSwitchProfile, onLogout
   const displayGrade = selectedProfile ? selectedProfile.grade : user.grade;
 
   // Create a profile object for the profile screen
-  const profileToShow = selectedProfile || (user.userType === 'student' ? {
-    id: user.id,
-    name: user.name,
-    avatar: '👨‍🎓',
-    grade: user.grade || '10th Grade',
-    pin: '1234' // Default pin for the profile
-  } : null);
+  const [profileToShow, setProfileToShow] = useState<StudentProfile | null>(null);
+  
+  useEffect(() => {
+    const fetchProfile = async () => {
+      if (selectedProfile) {
+        setProfileToShow(selectedProfile);
+      } else if (user.userType === 'student') {
+        try {
+          // For student users, we'll use the user's info to create a profile object
+          // We don't need to fetch from the API since we already have the user's info
+          setProfileToShow({
+            id: user.id,
+            name: user.name,
+            avatar: '👨‍🎓',
+            grade: user.grade || '10th Grade',
+            pin: '1234', // Default pin for the profile
+            roll_number: 'STU2024015',
+            date_of_birth: 'January 15, 2010',
+            blood_group: 'O+',
+            admission_date: 'April 1, 2018',
+            email: user.email || 'student@school.edu',
+            phone: '+1 234-567-8900',
+            address: '123 Education Street, Learning City, 12345',
+            section: 'A',
+            parent_name: 'John Doe',
+            parent_email: 'parent@email.com',
+            parent_phone: '+1 234-567-8901'
+          });
+        } catch (error) {
+          console.error('Error creating student profile:', error);
+          setProfileToShow(null);
+        }
+      } else {
+        setProfileToShow(null);
+      }
+    };
+    
+    fetchProfile();
+  }, [selectedProfile, user]);
 
   return (
     <div className="flex h-screen bg-gray-50 dark:bg-gray-900">
@@ -305,6 +471,9 @@ export function ChatInterface({ user, selectedProfile, onSwitchProfile, onLogout
         onToggle={() => setSidebarOpen(!sidebarOpen)}
         onNewChat={handleNewChat}
         currentMode={currentMode}
+        onSelectChat={handleSelectChat}
+        refreshChats={refreshRecentChats}
+        refreshTrigger={refreshTrigger}
       />
 
       <div className="flex-1 flex flex-col">
@@ -360,11 +529,30 @@ export function ChatInterface({ user, selectedProfile, onSwitchProfile, onLogout
           ) : currentMode === 'discussion' ? (
             <DiscussionMode onSendMessage={handleSendMessage} />
           ) : currentMode === 'quiz' && !assessmentConfig ? (
-            <AssessmentSetup type="quiz" onStartAssessment={handleAssessmentStart} />
+            <AssessmentSetup
+              type="quiz"
+              onStartAssessment={handleAssessmentStart}
+              userGrade={displayGrade}
+            />
           ) : currentMode === 'quiz' && assessmentConfig ? (
-            <AssessmentMode config={assessmentConfig} onComplete={handleNewChat} />
+            <QuizMode
+              onComplete={handleNewChat}
+              quizParams={{
+                class_id: assessmentConfig.classId || displayGrade || 'default',
+                subject_id: assessmentConfig.subjectId,
+                chapter_id: assessmentConfig.chapterIds[0] || 'default',
+                difficulty: assessmentConfig.difficulty,
+                num_questions: assessmentConfig.questionCount,
+                question_types: ['multiple-choice', 'single-choice'],
+                duration: assessmentConfig.duration
+              }}
+            />
           ) : currentMode === 'worksheet' && !assessmentConfig ? (
-            <AssessmentSetup type="worksheet" onStartAssessment={handleAssessmentStart} />
+            <AssessmentSetup
+              type="worksheet"
+              onStartAssessment={handleAssessmentStart}
+              userGrade={displayGrade}
+            />
           ) : currentMode === 'worksheet' && assessmentConfig ? (
             <AssessmentMode config={assessmentConfig} onComplete={handleNewChat} />
           ) : currentMode === 'exam' && !examConfig ? (
@@ -426,6 +614,7 @@ export function ChatInterface({ user, selectedProfile, onSwitchProfile, onLogout
             disabled={false}
             currentMode={currentMode}
             onChangeModeClick={() => setShowModeSetup(true)}
+            isLoading={isLoading}
           />
         )}
       </div>

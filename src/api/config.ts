@@ -9,10 +9,15 @@ export const API_ENDPOINTS = {
   LOGIN: '/auth/login',
   LOGOUT: '/auth/logout',
   REFRESH_TOKEN: '/auth/refresh',
+  REGISTER: '/auth/register',
+  REQUEST_OTP: '/auth/request-otp',
+  VERIFY_OTP: '/auth/verify-otp',
   
   // Users
   USERS: '/users',
   USER_PROFILE: '/users/profile',
+  STUDENT_PROFILES: '/users/students',
+  STUDENT_PROFILE: '/users/student-profiles',
   
   // Academic
   SUBJECTS: '/academic/subjects',
@@ -27,6 +32,9 @@ export const API_ENDPOINTS = {
   QUIZZES: '/assessment/quizzes',
   EXAMS: '/assessment/exams',
   WORKSHEETS: '/assessment/worksheets',
+  
+  // Generator
+  GENERATE_QUIZ: '/generator/quiz',
   
   // Planner
   PLANNER_TASKS: '/planner/tasks',

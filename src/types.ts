@@ -14,6 +14,7 @@ export interface User {
   email: string;
   userType: UserType;
   grade?: string;
+  normalized_grade?: string;
   subject?: string;
   teacherRole?: TeacherRole;
   teacherSubject?: string;
@@ -24,8 +25,20 @@ export interface StudentProfile {
   id: string;
   name: string;
   grade: string;
+  normalized_grade?: string;
   avatar: string;
   pin: string;
+  roll_number?: string;
+  date_of_birth?: string;
+  blood_group?: string;
+  admission_date?: string;
+  email?: string;
+  phone?: string;
+  address?: string;
+  section?: string;
+  parent_name?: string;
+  parent_email?: string;
+  parent_phone?: string;
 }
 
 export interface Message {

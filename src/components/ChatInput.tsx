@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { Send, RefreshCcw } from 'lucide-react';
+import { Send, RefreshCcw, Loader } from 'lucide-react';
 import { ChatMode } from '../types';
 
 interface ChatInputProps {
@@ -7,9 +7,10 @@ interface ChatInputProps {
   disabled?: boolean;
   currentMode: ChatMode;
   onChangeModeClick: () => void;
+  isLoading?: boolean;
 }
 
-export function ChatInput({ onSendMessage, disabled, currentMode, onChangeModeClick }: ChatInputProps) {
+export function ChatInput({ onSendMessage, disabled, currentMode, onChangeModeClick, isLoading = false }: ChatInputProps) {
   const [message, setMessage] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -43,6 +44,7 @@ export function ChatInput({ onSendMessage, disabled, currentMode, onChangeModeCl
     homework: 'What homework do you need help with?',
     revision: 'What topic would you like to revise?',
     discussion: 'Type your message or use voice input...',
+    planner: 'What would you like to plan?',
   };
 
   return (
@@ -73,10 +75,10 @@ export function ChatInput({ onSendMessage, disabled, currentMode, onChangeModeCl
 
           <button
             type="submit"
-            disabled={!message.trim() || disabled}
+            disabled={!message.trim() || disabled || isLoading}
             className="flex-shrink-0 p-3 bg-indigo-500 text-white rounded-lg hover:bg-indigo-600 transition-colors disabled:bg-gray-300 dark:disabled:bg-gray-600 disabled:cursor-not-allowed"
           >
-            <Send className="w-5 h-5" />
+            {isLoading ? <Loader className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
           </button>
         </form>
 

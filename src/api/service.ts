@@ -1,10 +1,12 @@
 import { API_BASE_URL, DEFAULT_REQUEST_OPTIONS, getAuthHeaders } from './config';
+import { authService } from './authService';
 
 // API Service for handling HTTP requests
 
 class ApiService {
   private baseUrl: string;
   private token: string | null = null;
+  private isRefreshing = false;
 
   constructor(baseUrl: string = API_BASE_URL) {
     this.baseUrl = baseUrl;
@@ -36,10 +38,37 @@ class ApiService {
     return this.token;
   }
 
+  // Handle token refresh
+  private async handleTokenRefresh(): Promise<string> {
+    if (this.isRefreshing) {
+      // If already refreshing, wait for it to complete
+      return new Promise((resolve) => {
+        const checkToken = setInterval(() => {
+          if (!this.isRefreshing) {
+            clearInterval(checkToken);
+            resolve(this.token || '');
+          }
+        }, 100);
+      });
+    }
+
+    this.isRefreshing = true;
+    
+    try {
+      const newToken = await authService.refreshToken();
+      this.isRefreshing = false;
+      return newToken;
+    } catch (error) {
+      this.isRefreshing = false;
+      throw error;
+    }
+  }
+
   // Generic request method
   private async request<T>(
     endpoint: string,
-    options: RequestInit = {}
+    options: RequestInit = {},
+    retryCount = 1
   ): Promise<T> {
     const url = `${this.baseUrl}${endpoint}`;
     
@@ -62,10 +91,35 @@ class ApiService {
     try {
       const response = await fetch(url, config);
       
-      // Handle HTTP errors
+      // Handle 401 Unauthorized - possibly expired token
+      if (response.status === 401 && retryCount > 0 && this.token) {
+        try {
+          // Try to refresh the token
+          const newToken = await this.handleTokenRefresh();
+          
+          // Update the token
+          this.token = newToken;
+          headers['Authorization'] = `Bearer ${newToken}`;
+          
+          // Retry the request with new token
+          return this.request<T>(endpoint, options, retryCount - 1);
+        } catch (refreshError) {
+          // If refresh fails, clear token and throw error
+          this.clearToken();
+          throw new Error('Session expired. Please login again.');
+        }
+      }
+      
+      // Handle other HTTP errors
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
+        const error = new Error(errorData.message || `HTTP error! status: ${response.status}`);
+        
+        // Add response status to error for better handling
+        (error as any).status = response.status;
+        (error as any).response = errorData;
+        
+        throw error;
       }
 
       return await response.json();
@@ -109,6 +163,36 @@ class ApiService {
     });
   }
 }
+
+// Get subjects by class ID
+export const getSubjectsByClass = async (classId: string) => {
+  try {
+    const response = await apiService.get(`/academic/subjects?class_id=${classId}`);
+    return response;
+  } catch (error) {
+    console.error('Error fetching subjects:', error);
+    throw error;
+  }
+};
+
+// Generate quiz
+export const generateQuiz = async (quizData: {
+  class_id: string;
+  subject_id: string;
+  chapter_id: string;
+  difficulty: string;
+  num_questions: number;
+  question_types: string[];
+  duration: number;
+}) => {
+  try {
+    const response = await apiService.post('/generator/quiz', quizData);
+    return response;
+  } catch (error) {
+    console.error('Error generating quiz:', error);
+    throw error;
+  }
+};
 
 // Export a singleton instance
 export const apiService = new ApiService();
