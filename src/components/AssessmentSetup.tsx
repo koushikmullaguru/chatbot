@@ -15,6 +15,7 @@ export interface AssessmentConfig {
   questionCount: number;
   difficulty: 'easy' | 'medium' | 'hard';
   includeExplanations?: boolean;
+  questionTypes?: string[];
   questions?: any[];
 }
 
@@ -85,6 +86,15 @@ const topicsBySubject: Record<string, string[]> = {
   'Computer Science': ['Programming', 'Data Structures', 'Algorithms', 'Databases', 'Networks']
 };
 
+const questionTypeOptions = [
+  { id: 'multiple-choice', name: 'Multiple Choice', description: 'Select one correct answer from options' },
+  { id: 'short-answer', name: 'Short Answer', description: 'Brief response to a question' },
+  { id: 'long-answer', name: 'Long Answer', description: 'Detailed explanation or analysis' },
+  { id: 'true-false', name: 'True/False', description: 'Determine if a statement is true or false' },
+  { id: 'fill-blank', name: 'Fill in the Blank', description: 'Complete the missing information' },
+  { id: 'matching', name: 'Matching', description: 'Match items from two columns' }
+];
+
 export function AssessmentSetup({ type, onStartAssessment, userGrade }: AssessmentSetupProps) {
   const info = assessmentInfo[type];
   const Icon = info.icon;
@@ -98,6 +108,9 @@ export function AssessmentSetup({ type, onStartAssessment, userGrade }: Assessme
   const [questionCount, setQuestionCount] = useState(info.defaultQuestions);
   const [difficulty, setDifficulty] = useState<'easy' | 'medium' | 'hard'>('medium');
   const [includeExplanations, setIncludeExplanations] = useState(type === 'worksheet');
+  const [selectedQuestionTypes, setSelectedQuestionTypes] = useState<string[]>(
+    type === 'quiz' ? ['multiple-choice'] : ['multiple-choice']
+  );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [chaptersLoading, setChaptersLoading] = useState(false);
@@ -107,6 +120,14 @@ export function AssessmentSetup({ type, onStartAssessment, userGrade }: Assessme
       prev.some(c => c.id === chapter.id)
         ? prev.filter(c => c.id !== chapter.id)
         : [...prev, chapter]
+    );
+  };
+
+  const toggleQuestionType = (questionTypeId: string) => {
+    setSelectedQuestionTypes(prev =>
+      prev.includes(questionTypeId)
+        ? prev.filter(id => id !== questionTypeId)
+        : [...prev, questionTypeId]
     );
   };
 
@@ -205,6 +226,11 @@ export function AssessmentSetup({ type, onStartAssessment, userGrade }: Assessme
       return;
     }
 
+    if (type !== 'quiz' && selectedQuestionTypes.length === 0) {
+      alert('Please select at least one question type');
+      return;
+    }
+
     try {
       // For now, we'll just use the first chapter for the API call
       // In a real implementation, you might want to make multiple API calls or modify the backend
@@ -217,7 +243,7 @@ export function AssessmentSetup({ type, onStartAssessment, userGrade }: Assessme
         chapter_id: chapter.id,
         difficulty: difficulty,
         num_questions: questionCount,
-        question_types: ['multiple-choice'],
+        question_types: type === 'quiz' ? ['multiple-choice'] : selectedQuestionTypes,
         duration: duration
       };
       
@@ -236,6 +262,7 @@ export function AssessmentSetup({ type, onStartAssessment, userGrade }: Assessme
         questionCount,
         difficulty,
         includeExplanations,
+        questionTypes: type === 'quiz' ? ['multiple-choice'] : selectedQuestionTypes,
         // Include the generated questions if available
         questions: response.questions || []
       });
@@ -254,7 +281,8 @@ export function AssessmentSetup({ type, onStartAssessment, userGrade }: Assessme
         duration,
         questionCount,
         difficulty,
-        includeExplanations
+        includeExplanations,
+        questionTypes: type === 'quiz' ? ['multiple-choice'] : selectedQuestionTypes
       });
     }
   };
@@ -447,6 +475,43 @@ export function AssessmentSetup({ type, onStartAssessment, userGrade }: Assessme
             </div>
           </div>
 
+          {/* Question Types - Only show for worksheet mode */}
+          {type === 'worksheet' && (
+            <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-md border border-gray-100 dark:border-gray-700">
+              <h3 className="mb-4 dark:text-white">
+                Question Types
+                {selectedQuestionTypes.length > 0 && (
+                  <span className={`ml-2 text-sm ${colors.text}`}>
+                    ({selectedQuestionTypes.length} selected)
+                  </span>
+                )}
+              </h3>
+              <div className="space-y-3">
+                {questionTypeOptions.map((questionType) => (
+                  <label
+                    key={questionType.id}
+                    className={`flex items-center gap-3 p-3 rounded-lg border-2 cursor-pointer transition-all ${
+                      selectedQuestionTypes.includes(questionType.id)
+                        ? `${colors.border} ${colors.bg}`
+                        : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selectedQuestionTypes.includes(questionType.id)}
+                      onChange={() => toggleQuestionType(questionType.id)}
+                      className="w-5 h-5 text-blue-500 rounded"
+                    />
+                    <div>
+                      <div className="dark:text-white">{questionType.name}</div>
+                      <div className="text-xs text-gray-500 dark:text-gray-400">{questionType.description}</div>
+                    </div>
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Options */}
           {type === 'worksheet' && (
             <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-md border border-gray-100 dark:border-gray-700">
@@ -514,7 +579,7 @@ export function AssessmentSetup({ type, onStartAssessment, userGrade }: Assessme
       <div className="flex justify-center">
         <button
           onClick={handleStart}
-          disabled={selectedChapters.length === 0}
+          disabled={selectedChapters.length === 0 || (type !== 'quiz' && selectedQuestionTypes.length === 0)}
           className={`px-8 py-4 ${colors.button} text-white rounded-xl hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-3 text-lg`}
         >
           <Icon className="w-6 h-6" />

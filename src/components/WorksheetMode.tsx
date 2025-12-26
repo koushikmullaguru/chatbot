@@ -1,29 +1,29 @@
 import { useState, useEffect, useRef } from 'react';
 import { Quiz, QuizQuestion } from '../types';
 import { Check, X, ArrowRight, RotateCcw, Trophy, Loader } from 'lucide-react';
-import { generateQuiz, submitQuiz } from '../api/service';
+import { generateWorksheet, submitWorksheet } from '../api/service';
 
 // Extend the QuizQuestion type to include the database question ID
 interface ExtendedQuizQuestion extends QuizQuestion {
   dbQuestionId?: string;
 }
 
-interface QuizModeProps {
-  onComplete: () => void;
-  quizParams?: {
-    class_id: string;
-    subject_id: string;
-    chapter_id: string;
+interface WorksheetModeProps {
+  config: {
+    classId: string;
+    subjectId: string;
+    chapterIds: string[];
     difficulty: string;
-    num_questions: number;
-    question_types: string[];
+    questionCount: number;
+    questionTypes: string[];
     duration: number;
   };
-  studentProfileId?: string;
+  onComplete: () => void;
+  studentProfileId?: string; // Add studentProfileId prop
 }
 
 // Define the API response interface
-interface QuizApiResponse {
+interface WorksheetApiResponse {
   id?: string;
   assessment_id?: string;
   class?: string;
@@ -32,7 +32,9 @@ interface QuizApiResponse {
   difficulty?: string;
   num_questions?: number;
   duration?: number;
-  questions: QuizQuestion[];
+  questions?: QuizQuestion[];
+  error?: string;
+  message?: string;
 }
 
 // Update the Quiz interface to use ExtendedQuizQuestion
@@ -43,40 +45,38 @@ interface ExtendedQuiz {
   questions: ExtendedQuizQuestion[];
 }
 
-export function QuizMode({ onComplete, quizParams, studentProfileId }: QuizModeProps) {
-  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
+export function WorksheetMode({ config, onComplete, studentProfileId }: WorksheetModeProps) {
   const [answers, setAnswers] = useState<Record<string, string | string[]>>({});
   const [showResults, setShowResults] = useState(false);
-  const [shortAnswerInput, setShortAnswerInput] = useState('');
-  const [quiz, setQuiz] = useState<ExtendedQuiz | null>(null);
+  const [worksheet, setWorksheet] = useState<ExtendedQuiz | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [quizGenerated, setQuizGenerated] = useState(false);
+  const [worksheetGenerated, setWorksheetGenerated] = useState(false);
   const [isRetrying, setIsRetrying] = useState(false);
   
   // Debug log to check component state
-  console.log('QuizMode render state:', { quiz, isLoading, error, quizGenerated });
-  
+  console.log('WorksheetMode render state:', { worksheet, isLoading, error, worksheetGenerated, studentProfileId });
+
   // Add a useEffect to log state changes
   useEffect(() => {
-    console.log('QuizMode state changed:', { quiz, isLoading, error, quizGenerated });
-  }, [quiz, isLoading, error, quizGenerated]);
+    console.log('WorksheetMode state changed:', { worksheet, isLoading, error, worksheetGenerated, studentProfileId });
+  }, [worksheet, isLoading, error, worksheetGenerated, studentProfileId]);
 
   useEffect(() => {
     // Add a flag to prevent multiple API calls
     let isMounted = true;
     let requestController = new AbortController();
     
-    const fetchQuiz = async () => {
-      // Check if quiz has already been generated
-      if (quiz) {
-        console.log('Quiz already exists, skipping API call');
+    const fetchWorksheet = async () => {
+      // Check if worksheet has already been generated
+      if (worksheet) {
+        console.log('Worksheet already exists, skipping API call');
         return;
       }
       
-      if (!quizParams) {
-        setError('No quiz parameters provided');
+      if (!config) {
+        setError('No worksheet parameters provided');
         setIsLoading(false);
         return;
       }
@@ -86,125 +86,149 @@ export function QuizMode({ onComplete, quizParams, studentProfileId }: QuizModeP
         setError(null);
         setIsRetrying(false);
         
-        // Call the generate quiz API
-        const response = await generateQuiz(quizParams) as QuizApiResponse;
+        // Call the generate worksheet API
+        const response = await generateWorksheet({
+          class_id: config.classId,
+          subject_id: config.subjectId,
+          chapter_id: config.chapterIds[0],
+          difficulty: config.difficulty,
+          num_questions: config.questionCount,
+          question_types: config.questionTypes,
+          duration: config.duration
+        }) as WorksheetApiResponse;
         
         // Only update state if component is still mounted and request wasn't cancelled
         if (!isMounted || requestController.signal.aborted) return;
         
         // Log the entire response for debugging
         console.log('Full API response:', response);
+        
+        // Check if response has an error
+        if (response.error) {
+          console.error('API returned an error:', response.error);
+          setError(`Failed to generate worksheet: ${response.error}`);
+          setIsLoading(false);
+          return;
+        }
+        
+        // Check if response has questions
+        if (!response.questions || !Array.isArray(response.questions) || response.questions.length === 0) {
+          console.error('API response does not contain valid questions:', response);
+          setError('Failed to generate worksheet questions. Please try again.');
+          setIsLoading(false);
+          return;
+        }
+        
         console.log('Response questions:', response?.questions);
         console.log('Questions type:', typeof response?.questions);
         console.log('Is questions an array:', Array.isArray(response?.questions));
         console.log('Questions length:', response?.questions?.length);
         
-        if (response && response.questions && Array.isArray(response.questions) && response.questions.length > 0) {
-          // Transform the API response to match the Quiz interface
-          const transformedQuiz: Quiz = {
-            id: response.assessment_id || response.id || `quiz-${Date.now()}`,
-            title: `${response.subject || 'General'} Quiz - ${response.chapter || 'General Knowledge'}`,
-            totalQuestions: response.questions.length,
-            questions: response.questions.map((q: any, index: number) => {
-              // Log the question object for debugging
-              console.log(`Question ${index + 1}:`, q);
-              console.log(`Question ${index + 1} keys:`, Object.keys(q));
-              
-              // Ensure question text is properly extracted
-              let questionText = '';
-              if (q.question) {
-                questionText = q.question;
-              } else if (q.text) {
-                questionText = q.text;
-              } else if (q.title) {
-                questionText = q.title;
-              } else if (q.prompt) {
-                questionText = q.prompt;
-              }
-              
-              // Log if question text is missing
-              if (!questionText) {
-                console.warn(`Question ${index + 1} is missing question text. Available fields:`, Object.keys(q));
-              }
-              
-              // Log options structure
-              console.log(`Question ${index + 1} options:`, q.options);
-              
-              // Process options to ensure they're strings
-              let processedOptions: string[] = [];
-              if (q.options) {
-                if (Array.isArray(q.options)) {
-                  processedOptions = q.options.map((option: any) =>
-                    typeof option === 'string' ? option : String(option)
-                  );
-                } else if (typeof q.options === 'object') {
-                  // If options is an object, try to extract values
-                  processedOptions = Object.values(q.options).map((val: any) =>
-                    typeof val === 'string' ? val : String(val)
-                  );
-                }
-              }
-              
-              console.log(`Question ${index + 1} processed options:`, processedOptions);
-              console.log(`Question ${index + 1} correctAnswer:`, q.correctAnswer);
-              console.log(`Question ${index + 1} correctAnswer type:`, typeof q.correctAnswer);
-              
-              // Process correctAnswer to ensure it's in the right format
-              let processedCorrectAnswer = q.correctAnswer;
-              if (q.type === 'multiple-choice' && typeof q.correctAnswer === 'string') {
-                // If correctAnswer is a string but question type is multiple-choice,
-                // it might need to be converted to an array
-                try {
-                  processedCorrectAnswer = JSON.parse(q.correctAnswer);
-                } catch (e) {
-                  // If parsing fails, keep it as is
-                  console.warn(`Failed to parse correctAnswer for question ${index + 1}:`, e);
-                }
-              }
-              
-              console.log(`Question ${index + 1} processed correctAnswer:`, processedCorrectAnswer);
-              
-              return {
-                // Use the actual question ID from the database if available
-                id: q.id || `q${index + 1}`,
-                // Store the database question ID separately for submission
-                dbQuestionId: q.id || `q${index + 1}`,
-                type: q.type || 'single-choice',
-                question: questionText,
-                options: processedOptions,
-                correctAnswer: processedCorrectAnswer || '',
-                explanation: q.explanation || ''
-              };
-            })
-          };
-          
-          console.log('Setting quiz state:', transformedQuiz);
-          // Use a callback to ensure we're using the latest state
-          setQuiz(prevQuiz => {
-            console.log('Previous quiz state:', prevQuiz);
-            console.log('New quiz state:', transformedQuiz);
-            return transformedQuiz;
-          });
-          
-          // Use a timeout to ensure the state is updated before setting loading to false
-          setTimeout(() => {
-            if (isMounted) {
-              // Mark quiz as generated only after successful completion
-              setQuizGenerated(true);
-              console.log('Quiz state set successfully');
-              // Explicitly set loading to false
-              setIsLoading(false);
+        // Ensure questions is an array
+        const questions = Array.isArray(response.questions) ? response.questions : [response.questions];
+        console.log('Processed questions array:', questions);
+        
+        // Transform the API response to match the Quiz interface
+        const transformedWorksheet: Quiz = {
+          id: response.assessment_id || response.id || `worksheet-${Date.now()}`,
+          title: `${response.subject || 'General'} Worksheet - ${response.chapter || 'General Knowledge'}`,
+          totalQuestions: questions.length,
+          questions: questions.map((q: any, index: number) => {
+            // Log the question object for debugging
+            console.log(`Question ${index + 1}:`, q);
+            console.log(`Question ${index + 1} keys:`, Object.keys(q));
+             
+            // Ensure question text is properly extracted
+            let questionText = '';
+            if (q.question) {
+              questionText = q.question;
+            } else if (q.text) {
+              questionText = q.text;
+            } else if (q.title) {
+              questionText = q.title;
+            } else if (q.prompt) {
+              questionText = q.prompt;
             }
-          }, 100);
-        } else {
-          console.error('Invalid API response:', response);
-          setError('Failed to generate quiz questions. Please try again.');
-        }
+            
+            // Log if question text is missing
+            if (!questionText) {
+              console.warn(`Question ${index + 1} is missing question text. Available fields:`, Object.keys(q));
+            }
+            
+            // Log options structure
+            console.log(`Question ${index + 1} options:`, q.options);
+            
+            // Process options to ensure they're strings
+            let processedOptions: string[] = [];
+            if (q.options) {
+              if (Array.isArray(q.options)) {
+                processedOptions = q.options.map((option: any) =>
+                  typeof option === 'string' ? option : String(option)
+                );
+              } else if (typeof q.options === 'object') {
+                // If options is an object, try to extract values
+                processedOptions = Object.values(q.options).map((val: any) =>
+                  typeof val === 'string' ? val : String(val)
+                );
+              }
+            }
+            
+            console.log(`Question ${index + 1} processed options:`, processedOptions);
+            console.log(`Question ${index + 1} correctAnswer:`, q.correctAnswer);
+            console.log(`Question ${index + 1} correctAnswer type:`, typeof q.correctAnswer);
+            
+            // Process correctAnswer to ensure it's in the right format
+            let processedCorrectAnswer = q.correctAnswer;
+            if (q.type === 'multiple-choice' && typeof q.correctAnswer === 'string') {
+              // If correctAnswer is a string but question type is multiple-choice,
+              // it might need to be converted to an array
+              try {
+                processedCorrectAnswer = JSON.parse(q.correctAnswer);
+              } catch (e) {
+                // If parsing fails, keep it as is
+                console.warn(`Failed to parse correctAnswer for question ${index + 1}:`, e);
+              }
+            }
+            
+            console.log(`Question ${index + 1} processed correctAnswer:`, processedCorrectAnswer);
+            
+            return {
+              // Use the actual question ID from the database if available
+              id: q.id || `q${index + 1}`,
+              // Store the database question ID separately for submission
+              dbQuestionId: q.id || `q${index + 1}`,
+              type: q.type || 'single-choice',
+              question: questionText,
+              options: processedOptions,
+              correctAnswer: processedCorrectAnswer || '',
+              explanation: q.explanation || ''
+            };
+          })
+        };
+        
+        console.log('Setting worksheet state:', transformedWorksheet);
+        // Use a callback to ensure we're using the latest state
+        setWorksheet(prevWorksheet => {
+          console.log('Previous worksheet state:', prevWorksheet);
+          console.log('New worksheet state:', transformedWorksheet);
+          return transformedWorksheet;
+        });
+        
+        // Use a timeout to ensure the state is updated before setting loading to false
+        setTimeout(() => {
+          if (isMounted) {
+            // Mark worksheet as generated only after successful completion
+            setWorksheetGenerated(true);
+            console.log('Worksheet state set successfully');
+            // Explicitly set loading to false
+            setIsLoading(false);
+          }
+        }, 100);
       } catch (err) {
-        console.error('Error generating quiz:', err);
+        console.error('Error generating worksheet:', err);
         // Only update error state if component is still mounted and request wasn't cancelled
         if (isMounted && !requestController.signal.aborted) {
-          setError('Failed to generate quiz. Please try again.');
+          setError('Failed to generate worksheet. Please try again.');
         }
       } finally {
         // Only update loading state if component is still mounted and request wasn't cancelled
@@ -214,14 +238,14 @@ export function QuizMode({ onComplete, quizParams, studentProfileId }: QuizModeP
       }
     };
 
-    fetchQuiz();
+    fetchWorksheet();
     
     // Cleanup function to set isMounted to false and abort any pending requests
     return () => {
       isMounted = false;
       requestController.abort();
     };
-  }, [quizParams, quizGenerated]);
+  }, [config, worksheetGenerated]);
 
   // Show loading state
   if (isLoading) {
@@ -230,7 +254,7 @@ export function QuizMode({ onComplete, quizParams, studentProfileId }: QuizModeP
       <div className="h-full flex items-center justify-center bg-gradient-to-br from-green-50 to-blue-50 dark:from-gray-900 dark:to-gray-800">
         <div className="text-center">
           <Loader className="w-12 h-12 animate-spin text-blue-500 mx-auto mb-4" />
-          <p className="text-gray-600 dark:text-gray-400">Generating quiz...</p>
+          <p className="text-gray-600 dark:text-gray-400">Generating worksheet...</p>
         </div>
       </div>
     );
@@ -249,7 +273,7 @@ export function QuizMode({ onComplete, quizParams, studentProfileId }: QuizModeP
               onClick={() => {
                 setError(null);
                 setIsLoading(true);
-                setQuizGenerated(false);
+                setWorksheetGenerated(false);
               }}
               disabled={isRetrying}
               className="px-6 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors disabled:opacity-50"
@@ -275,47 +299,44 @@ export function QuizMode({ onComplete, quizParams, studentProfileId }: QuizModeP
     );
   }
 
-  // Show empty state if no quiz
-  if (!quiz) {
-    console.log('Showing empty state - quiz is null');
+  // Show empty state if no worksheet
+  if (!worksheet) {
+    console.log('Showing empty state - worksheet is null');
     return (
       <div className="h-full flex items-center justify-center bg-gradient-to-br from-green-50 to-blue-50 dark:from-gray-900 dark:to-gray-800">
         <div className="text-center">
-          <p className="text-gray-600 dark:text-gray-400">No quiz available</p>
+          <p className="text-gray-600 dark:text-gray-400">No worksheet available</p>
         </div>
       </div>
     );
   }
 
-  const currentQuestion = quiz.questions[currentQuestionIndex];
-
-  const handleSingleChoice = (option: string) => {
-    console.log(`Single choice selected: ${option} for question ${currentQuestion.id}`);
-    setAnswers(prev => ({ ...prev, [currentQuestion.id]: option }));
+  const handleSingleChoice = (questionId: string, option: string) => {
+    console.log(`Single choice selected: ${option} for question ${questionId}`);
+    setAnswers(prev => ({ ...prev, [questionId]: option }));
   };
 
-  const handleMultipleChoice = (option: string) => {
-    const currentAnswers = (answers[currentQuestion.id] as string[]) || [];
+  const handleMultipleChoice = (questionId: string, option: string) => {
+    const currentAnswers = (answers[questionId] as string[]) || [];
     const newAnswers = currentAnswers.includes(option)
       ? currentAnswers.filter(a => a !== option)
       : [...currentAnswers, option];
     
-    console.log(`Multiple choice selected: ${option} for question ${currentQuestion.id}`);
+    console.log(`Multiple choice selected: ${option} for question ${questionId}`);
     console.log(`Current answers:`, currentAnswers);
     console.log(`New answers:`, newAnswers);
     
-    setAnswers(prev => ({ ...prev, [currentQuestion.id]: newAnswers }));
+    setAnswers(prev => ({ ...prev, [questionId]: newAnswers }));
   };
 
-  const handleShortAnswer = () => {
-    console.log(`Short answer submitted: ${shortAnswerInput.trim()} for question ${currentQuestion.id}`);
-    setAnswers(prev => ({ ...prev, [currentQuestion.id]: shortAnswerInput.trim() }));
-    setShortAnswerInput('');
+  const handleShortAnswer = (questionId: string, answer: string) => {
+    console.log(`Short answer submitted: ${answer.trim()} for question ${questionId}`);
+    setAnswers(prev => ({ ...prev, [questionId]: answer.trim() }));
   };
 
-  const handleSubmitQuiz = async () => {
-    if (!quiz || !studentProfileId) {
-      console.error('Cannot submit quiz: missing quiz or student profile ID');
+  const handleSubmitWorksheet = async () => {
+    if (!worksheet || !studentProfileId) {
+      console.error('Cannot submit worksheet: missing worksheet or student profile ID');
       return;
     }
 
@@ -325,7 +346,7 @@ export function QuizMode({ onComplete, quizParams, studentProfileId }: QuizModeP
       // Prepare answers for submission
       const formattedAnswers = Object.entries(answers).map(([questionId, answer]) => {
         // Find the question to get the database question ID
-        const question = quiz.questions.find(q => q.id === questionId);
+        const question = worksheet.questions.find(q => q.id === questionId);
         return {
           question_id: question?.dbQuestionId || questionId,
           answer: Array.isArray(answer) ? answer.join(', ') : String(answer),
@@ -333,31 +354,18 @@ export function QuizMode({ onComplete, quizParams, studentProfileId }: QuizModeP
         };
       });
       
-      console.log('Submitting quiz answers:', formattedAnswers);
+      console.log('Submitting worksheet answers:', formattedAnswers);
       
-      // Submit quiz answers
-      const result = await submitQuiz(quiz.id, formattedAnswers, studentProfileId);
-      console.log('Quiz submission result:', result);
+      // Submit worksheet answers
+      const result = await submitWorksheet(worksheet.id, formattedAnswers, studentProfileId);
+      console.log('Worksheet submission result:', result);
       
       setShowResults(true);
     } catch (error) {
-      console.error('Error submitting quiz:', error);
-      setError('Failed to submit quiz. Please try again.');
+      console.error('Error submitting worksheet:', error);
+      setError('Failed to submit worksheet. Please try again.');
     } finally {
       setIsSubmitting(false);
-    }
-  };
-
-  const handleNext = () => {
-    if (currentQuestion.type === 'short-answer' && shortAnswerInput.trim()) {
-      handleShortAnswer();
-    }
-
-    if (currentQuestionIndex < quiz.questions.length - 1) {
-      setCurrentQuestionIndex(prev => prev + 1);
-      setShortAnswerInput('');
-    } else {
-      handleSubmitQuiz();
     }
   };
 
@@ -370,7 +378,7 @@ export function QuizMode({ onComplete, quizParams, studentProfileId }: QuizModeP
     console.log(`Correct answer:`, question.correctAnswer);
     console.log(`Question type:`, question.type);
     
-    if (question.type === 'short-answer') {
+    if (question.type === 'short-answer' || question.type === 'long-answer') {
       let correctAnswer = '';
       if (typeof question.correctAnswer === 'string') {
         correctAnswer = question.correctAnswer.toLowerCase().trim();
@@ -421,18 +429,9 @@ export function QuizMode({ onComplete, quizParams, studentProfileId }: QuizModeP
   };
 
   const calculateScore = () => {
-    const correct = quiz.questions.filter(q => checkAnswer(q)).length;
-    const percentage = Math.round((correct / quiz.totalQuestions) * 100);
+    const correct = worksheet.questions.filter(q => checkAnswer(q)).length;
+    const percentage = Math.round((correct / worksheet.totalQuestions) * 100);
     return { correct, percentage };
-  };
-
-  const canProceed = () => {
-    if (currentQuestion.type === 'short-answer') {
-      return shortAnswerInput.trim().length > 0;
-    }
-    return answers[currentQuestion.id] !== undefined && 
-      (currentQuestion.type !== 'multiple-choice' || 
-       (answers[currentQuestion.id] as string[])?.length > 0);
   };
 
   if (showResults) {
@@ -444,28 +443,26 @@ export function QuizMode({ onComplete, quizParams, studentProfileId }: QuizModeP
           {/* Results Header */}
           <div className="bg-white dark:bg-gray-800 rounded-3xl shadow-xl p-8 mb-8 text-center">
             <Trophy className="w-20 h-20 text-yellow-500 mx-auto mb-4" />
-            <h2 className="text-4xl mb-2 dark:text-white">Quiz Complete!</h2>
+            <h2 className="text-4xl mb-2 dark:text-white">Worksheet Complete!</h2>
             <div className="text-6xl my-6 dark:text-white">{percentage}%</div>
             <p className="text-xl text-gray-600 dark:text-gray-300 mb-6">
-              You got {correct} out of {quiz.totalQuestions} questions correct
+              You got {correct} out of {worksheet.totalQuestions} questions correct
             </p>
             
             <div className="flex gap-4 justify-center">
               <button
                 onClick={() => {
-                  setCurrentQuestionIndex(0);
                   setAnswers({});
                   setShowResults(false);
-                  setShortAnswerInput('');
-                  setQuiz(null);
-                  setQuizGenerated(false);
+                  setWorksheet(null);
+                  setWorksheetGenerated(false);
                   setIsLoading(true);
                   setIsRetrying(true);
                 }}
                 className="flex items-center gap-2 px-6 py-3 bg-purple-500 text-white rounded-lg hover:bg-purple-600 transition-colors"
               >
                 <RotateCcw className="w-5 h-5" />
-                Retake Quiz
+                Retake Worksheet
               </button>
               <button
                 onClick={onComplete}
@@ -479,7 +476,7 @@ export function QuizMode({ onComplete, quizParams, studentProfileId }: QuizModeP
           {/* Answer Review */}
           <div className="space-y-6">
             <h3 className="text-2xl mb-4 dark:text-white">Review Your Answers</h3>
-            {quiz.questions.map((question, index) => {
+            {worksheet.questions.map((question, index) => {
               const isCorrect = checkAnswer(question);
               const userAnswer = answers[question.id];
               
@@ -500,7 +497,7 @@ export function QuizMode({ onComplete, quizParams, studentProfileId }: QuizModeP
                         <span className="text-gray-500 dark:text-gray-400">Q{index + 1}.</span> {question.question || "Question text not available"}
                       </h4>
                       
-                      {question.type === 'short-answer' ? (
+                      {question.type === 'short-answer' || question.type === 'long-answer' ? (
                         <div className="space-y-2">
                           <div className="p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
                             <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">Your answer:</p>
@@ -592,114 +589,115 @@ export function QuizMode({ onComplete, quizParams, studentProfileId }: QuizModeP
 
   return (
     <div className="h-full overflow-y-auto bg-gradient-to-br from-green-50 to-blue-50 dark:from-gray-900 dark:to-gray-800 px-6 py-12">
-      <div className="max-w-3xl mx-auto">
-        {/* Progress Bar */}
+      <div className="max-w-4xl mx-auto">
+        {/* Worksheet Header */}
         <div className="mb-8">
-          <div className="flex justify-between text-sm text-gray-600 dark:text-gray-400 mb-2">
-            <span>Question {currentQuestionIndex + 1} of {quiz.totalQuestions}</span>
-            <span>{Math.round(((currentQuestionIndex + 1) / quiz.totalQuestions) * 100)}%</span>
+          <h1 className="text-3xl font-bold dark:text-white mb-2">{worksheet.title}</h1>
+          <div className="flex justify-between text-sm text-gray-600 dark:text-gray-400 mb-4">
+            <span>{worksheet.totalQuestions} Questions</span>
+            <span>{config.duration} Minutes</span>
           </div>
           <div className="h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
             <div
               className="h-full bg-gradient-to-r from-green-500 to-blue-500 transition-all duration-300"
-              style={{ width: `${((currentQuestionIndex + 1) / quiz.totalQuestions) * 100}%` }}
+              style={{ width: `${(Object.keys(answers).length / worksheet.totalQuestions) * 100}%` }}
             />
           </div>
         </div>
 
-        {/* Question Card */}
-        <div className="bg-white dark:bg-gray-800 rounded-3xl shadow-xl p-8">
-          <div className="mb-8">
-            <div className="inline-block px-3 py-1 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 rounded-full text-sm mb-4">
-              {currentQuestion.type === 'single-choice' && 'Single Choice'}
-              {currentQuestion.type === 'multiple-choice' && 'Multiple Choice - Select all that apply'}
-              {currentQuestion.type === 'short-answer' && 'Short Answer'}
-            </div>
-            <h3 className="text-2xl dark:text-white">
-              {currentQuestion.question || "Question text not available"}
-            </h3>
-          </div>
-
-          {/* Answer Options */}
-          <div className="space-y-3 mb-8">
-            {currentQuestion.type === 'short-answer' ? (
-              <div>
-                <textarea
-                  value={shortAnswerInput}
-                  onChange={(e) => setShortAnswerInput(e.target.value)}
-                  placeholder="Type your answer here..."
-                  rows={4}
-                  className="w-full px-4 py-3 border-2 border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent resize-none dark:bg-gray-700 dark:text-white"
-                />
+        {/* Questions */}
+        <div className="space-y-8">
+          {worksheet.questions.map((question, index) => (
+            <div key={question.id} className="bg-white dark:bg-gray-800 rounded-3xl shadow-xl p-8">
+              <div className="mb-6">
+                <div className="inline-block px-3 py-1 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 rounded-full text-sm mb-4">
+                  {question.type === 'single-choice' && 'Single Choice'}
+                  {question.type === 'multiple-choice' && 'Multiple Choice - Select all that apply'}
+                  {question.type === 'short-answer' && 'Short Answer'}
+                  {question.type === 'long-answer' && 'Long Answer'}
+                </div>
+                <h3 className="text-xl dark:text-white">
+                  <span className="text-gray-500 dark:text-gray-400">Q{index + 1}.</span> {question.question || "Question text not available"}
+                </h3>
               </div>
-            ) : (
-              currentQuestion.options?.map((option, index) => {
-                const isSelected = currentQuestion.type === 'multiple-choice'
-                  ? (answers[currentQuestion.id] as string[])?.includes(option)
-                  : answers[currentQuestion.id] === option;
 
-                return (
-                  <button
-                    key={option || index}
-                    onClick={() => {
-                      if (currentQuestion.type === 'multiple-choice') {
-                        handleMultipleChoice(option);
-                      } else {
-                        handleSingleChoice(option);
-                      }
-                    }}
-                    className={`w-full p-4 text-left rounded-xl border-2 transition-all ${
-                      isSelected
-                        ? 'border-green-500 bg-green-50 dark:bg-green-900/30'
-                        : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'
-                    }`}
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className={`w-5 h-5 rounded ${
-                        currentQuestion.type === 'multiple-choice' ? 'rounded-md' : 'rounded-full'
-                      } border-2 flex items-center justify-center ${
-                        isSelected
-                          ? 'border-green-500 bg-green-500'
-                          : 'border-gray-300 dark:border-gray-600'
-                      }`}>
-                        {isSelected && <Check className="w-3 h-3 text-white" />}
-                      </div>
-                      <span className="dark:text-white">{option}</span>
-                    </div>
-                  </button>
-                );
-              })
-            )}
-          </div>
+              {/* Answer Options */}
+              <div className="space-y-3 mb-6">
+                {question.type === 'short-answer' || question.type === 'long-answer' ? (
+                  <textarea
+                    value={(answers[question.id] as string) || ''}
+                    onChange={(e) => handleShortAnswer(question.id, e.target.value)}
+                    placeholder="Type your answer here..."
+                    rows={question.type === 'long-answer' ? 6 : 4}
+                    className="w-full px-4 py-3 border-2 border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent resize-none dark:bg-gray-700 dark:text-white"
+                  />
+                ) : (
+                  question.options?.map((option, optionIndex) => {
+                    const isSelected = question.type === 'multiple-choice'
+                      ? (answers[question.id] as string[])?.includes(option)
+                      : answers[question.id] === option;
 
-          {/* Navigation */}
-          <div className="flex justify-between items-center">
-            <button
-              onClick={() => setCurrentQuestionIndex(prev => prev - 1)}
-              disabled={currentQuestionIndex === 0}
-              className="px-6 py-3 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed dark:text-white"
-            >
-              Previous
-            </button>
+                    return (
+                      <button
+                        key={option || optionIndex}
+                        onClick={() => {
+                          if (question.type === 'multiple-choice') {
+                            handleMultipleChoice(question.id, option);
+                          } else {
+                            handleSingleChoice(question.id, option);
+                          }
+                        }}
+                        className={`w-full p-4 text-left rounded-xl border-2 transition-all ${
+                          isSelected
+                            ? 'border-green-500 bg-green-50 dark:bg-green-900/30'
+                            : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'
+                        }`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className={`w-5 h-5 rounded ${
+                            question.type === 'multiple-choice' ? 'rounded-md' : 'rounded-full'
+                          } border-2 flex items-center justify-center ${
+                            isSelected
+                              ? 'border-green-500 bg-green-500'
+                              : 'border-gray-300 dark:border-gray-600'
+                          }`}>
+                            {isSelected && <Check className="w-3 h-3 text-white" />}
+                          </div>
+                          <span className="dark:text-white">{option}</span>
+                        </div>
+                      </button>
+                    );
+                  })
+                )}
+              </div>
 
-            <button
-              onClick={handleNext}
-              disabled={!canProceed() || isSubmitting}
-              className="flex items-center gap-2 px-6 py-3 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors disabled:bg-gray-300 dark:disabled:bg-gray-600 disabled:cursor-not-allowed"
-            >
-              {isSubmitting ? (
-                <>
-                  <Loader className="w-5 h-5 animate-spin" />
-                  Submitting...
-                </>
-              ) : (
-                <>
-                  {currentQuestionIndex === quiz.questions.length - 1 ? 'Finish' : 'Next'}
-                  <ArrowRight className="w-5 h-5" />
-                </>
+              {question.explanation && (
+                <div className="p-4 bg-blue-50 dark:bg-blue-900/30 rounded-lg">
+                  <p className="text-sm text-blue-900 dark:text-blue-200">
+                    <strong>Explanation:</strong> {question.explanation}
+                  </p>
+                </div>
               )}
-            </button>
-          </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Submit Button */}
+        <div className="mt-8 flex justify-center">
+          <button
+            onClick={handleSubmitWorksheet}
+            disabled={isSubmitting || !studentProfileId}
+            className="flex items-center gap-2 px-8 py-4 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors disabled:bg-gray-300 dark:disabled:bg-gray-600 disabled:cursor-not-allowed"
+          >
+            {isSubmitting ? (
+              <>
+                <Loader className="w-5 h-5 animate-spin" />
+                Submitting...
+              </>
+            ) : (
+              'Submit Worksheet'
+            )}
+          </button>
         </div>
       </div>
     </div>

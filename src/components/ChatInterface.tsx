@@ -6,6 +6,7 @@ import { HomeworkSetup } from './HomeworkSetup';
 import { RevisionSetup } from './RevisionSetup';
 import { AssessmentSetup, AssessmentConfig } from './AssessmentSetup';
 import { AssessmentMode } from './AssessmentMode';
+import { WorksheetMode } from './WorksheetMode';
 import { TeacherModeSelector } from './TeacherModeSelector';
 import { ParentDashboard } from './ParentDashboard';
 import { TeacherClassSelector, ClassConfig } from './TeacherClassSelector';
@@ -19,7 +20,9 @@ import { ChatHeader } from './ChatHeader';
 import { ChatMessages } from './ChatMessages';
 import { ChatInput } from './ChatInput';
 import { DiscussionMode } from './DiscussionMode';
+import { QAMode } from './QAMode';
 import { QuizMode } from './QuizMode';
+import { QuizModeWorking } from './QuizModeWorking';
 import { ExamMode } from './ExamMode';
 import { StudentProfileScreen } from './StudentProfileScreen';
 import { PreparationPlanner } from './PreparationPlanner';
@@ -214,46 +217,26 @@ export function ChatInterface({ user, selectedProfile, onSwitchProfile, onLogout
     setMessages(prev => [...prev, userMessage]);
 
     try {
-      // If no chat session exists, create one
-      if (!currentChatSession && selectedProfile) {
-        const newSession = await chatService.createChatSession({
+      // For Q&A mode, use the LLM API directly
+      if (currentMode === 'qa' && selectedProfile) {
+        const response = await chatService.askQuestion({
+          question: content,
           student_profile_id: selectedProfile.id,
-          mode: currentMode,
-          title: `${currentMode.toUpperCase()} Session`
+          subject: selectedProfile.grade
         });
-        setCurrentChatSession(newSession);
         
-        // Send message to API
-        const aiMessage = await chatService.sendMessage(newSession.id, { content });
-        
-        // Convert API message to frontend format
-        const formattedAiMessage: Message = {
-          id: aiMessage.id,
-          content: aiMessage.content,
+        // Convert API response to frontend format
+        const aiMessage: Message = {
+          id: response.id,
+          content: response.content,
           sender: 'ai',
-          timestamp: new Date(aiMessage.timestamp),
-          suggestedQuestions: aiMessage.suggested_questions
+          timestamp: new Date(response.timestamp),
+          suggestedQuestions: response.suggested_questions
         };
         
-        setMessages(prev => [...prev, formattedAiMessage]);
-        // Refresh recent chats after creating a new session
-        refreshRecentChats();
-      } else if (currentChatSession) {
-        // Send message to existing session
-        const aiMessage = await chatService.sendMessage(currentChatSession.id, { content });
-        
-        // Convert API message to frontend format
-        const formattedAiMessage: Message = {
-          id: aiMessage.id,
-          content: aiMessage.content,
-          sender: 'ai',
-          timestamp: new Date(aiMessage.timestamp),
-          suggestedQuestions: aiMessage.suggested_questions
-        };
-        
-        setMessages(prev => [...prev, formattedAiMessage]);
+        setMessages(prev => [...prev, aiMessage]);
       } else {
-        // Fallback to local response if no profile or session
+        // Fallback to local response for other modes
         setTimeout(() => {
           const { content: aiContent, suggestedQuestions } = generateAIResponse(content, currentMode);
           const aiMessage: Message = {
@@ -294,8 +277,8 @@ export function ChatInterface({ user, selectedProfile, onSwitchProfile, onLogout
     setShowModeSetup(false);
     setAssessmentConfig(null);
     
-    // Don't add system message for discussion, quiz, revision, exam, worksheet, homework, or planner modes with setup
-    if (mode === 'discussion' || mode === 'quiz' || mode === 'revision' || mode === 'exam' || mode === 'homework' || mode === 'worksheet' || mode === 'planner') {
+    // Don't add system message for qa, discussion, quiz, revision, exam, worksheet, homework, or planner modes with setup
+    if (mode === 'qa' || mode === 'discussion' || mode === 'quiz' || mode === 'revision' || mode === 'exam' || mode === 'homework' || mode === 'worksheet' || mode === 'planner') {
       setMessages([]);
       return;
     }
@@ -303,7 +286,7 @@ export function ChatInterface({ user, selectedProfile, onSwitchProfile, onLogout
     // Add system message about mode change
     const systemMessage: Message = {
       id: Date.now().toString(),
-      content: `Switched to ${mode.toUpperCase()} mode. How can I help you today?`,
+      content: `Switched to ${mode} mode. How can I help you today?`,
       sender: 'ai',
       timestamp: new Date(),
       suggestedQuestions: generateAIResponse('', mode).suggestedQuestions,
@@ -330,27 +313,16 @@ export function ChatInterface({ user, selectedProfile, onSwitchProfile, onLogout
       setCurrentChatSession(chatSession);
       setCurrentMode(chatSession.mode as ChatMode);
       
-      // Load messages for this chat session
-      const chatWithMessages = await chatService.getChatSession(chatSession.id);
-      
-      // Convert API messages to frontend format
-      const formattedMessages: Message[] = chatWithMessages.messages.map((msg: any) => ({
-        id: msg.id,
-        content: msg.content,
-        sender: msg.sender_type === 'user' ? 'user' : 'ai',
-        timestamp: new Date(msg.timestamp),
-        suggestedQuestions: msg.suggested_questions
-      }));
-      
-      setMessages(formattedMessages);
+      // Since we removed chat sessions, just set the mode and clear messages
+      setMessages([]);
       setShowModeSetup(false);
       setSidebarOpen(false); // Close sidebar on mobile after selecting a chat
     } catch (error) {
-      console.error('Error loading chat session:', error);
+      console.error('Error selecting chat:', error);
       // Show error message to user
       const errorMessage: Message = {
         id: Date.now().toString(),
-        content: "Sorry, I couldn't load this chat session. Please try again later.",
+        content: "Sorry, I couldn't load this chat. Please try again later.",
         sender: 'ai',
         timestamp: new Date(),
       };
@@ -422,7 +394,7 @@ export function ChatInterface({ user, selectedProfile, onSwitchProfile, onLogout
 
   const displayName = selectedProfile ? selectedProfile.name : user.name;
   const displayGrade = selectedProfile ? selectedProfile.grade : user.grade;
-
+  
   // Create a profile object for the profile screen
   const [profileToShow, setProfileToShow] = useState<StudentProfile | null>(null);
   
@@ -471,9 +443,6 @@ export function ChatInterface({ user, selectedProfile, onSwitchProfile, onLogout
         onToggle={() => setSidebarOpen(!sidebarOpen)}
         onNewChat={handleNewChat}
         currentMode={currentMode}
-        onSelectChat={handleSelectChat}
-        refreshChats={refreshRecentChats}
-        refreshTrigger={refreshTrigger}
       />
 
       <div className="flex-1 flex flex-col">
@@ -526,6 +495,11 @@ export function ChatInterface({ user, selectedProfile, onSwitchProfile, onLogout
               currentMode={currentMode}
               onSelectMode={handleModeChange}
             />
+          ) : currentMode === 'qa' ? (
+            <QAMode
+              studentProfileId={selectedProfile?.id || user.id}
+              subject={selectedProfile?.grade || user.grade}
+            />
           ) : currentMode === 'discussion' ? (
             <DiscussionMode onSendMessage={handleSendMessage} />
           ) : currentMode === 'quiz' && !assessmentConfig ? (
@@ -535,7 +509,7 @@ export function ChatInterface({ user, selectedProfile, onSwitchProfile, onLogout
               userGrade={displayGrade}
             />
           ) : currentMode === 'quiz' && assessmentConfig ? (
-            <QuizMode
+            <QuizModeWorking
               onComplete={handleNewChat}
               quizParams={{
                 class_id: assessmentConfig.classId || displayGrade || 'default',
@@ -543,9 +517,11 @@ export function ChatInterface({ user, selectedProfile, onSwitchProfile, onLogout
                 chapter_id: assessmentConfig.chapterIds[0] || 'default',
                 difficulty: assessmentConfig.difficulty,
                 num_questions: assessmentConfig.questionCount,
-                question_types: ['multiple-choice', 'single-choice'],
+                question_types: assessmentConfig.questionTypes || ['multiple-choice', 'single-choice'],
                 duration: assessmentConfig.duration
               }}
+              studentProfileId={selectedProfile?.id || user.id}
+              mode="quiz"
             />
           ) : currentMode === 'worksheet' && !assessmentConfig ? (
             <AssessmentSetup
@@ -554,7 +530,19 @@ export function ChatInterface({ user, selectedProfile, onSwitchProfile, onLogout
               userGrade={displayGrade}
             />
           ) : currentMode === 'worksheet' && assessmentConfig ? (
-            <AssessmentMode config={assessmentConfig} onComplete={handleNewChat} />
+            <WorksheetMode 
+              config={{
+                classId: assessmentConfig.classId || displayGrade || 'default',
+                subjectId: assessmentConfig.subjectId,
+                chapterIds: assessmentConfig.chapterIds,
+                difficulty: assessmentConfig.difficulty,
+                questionCount: assessmentConfig.questionCount,
+                questionTypes: assessmentConfig.questionTypes || ['multiple-choice', 'short-answer', 'long-answer'],
+                duration: assessmentConfig.duration
+              }} 
+              onComplete={handleNewChat} 
+              studentProfileId={selectedProfile?.id || user.id}
+            />
           ) : currentMode === 'exam' && !examConfig ? (
             <ExamSetup 
               onStartExam={handleExamStart} 
@@ -608,7 +596,7 @@ export function ChatInterface({ user, selectedProfile, onSwitchProfile, onLogout
           <div ref={messagesEndRef} />
         </div>
 
-        {!showModeSetup && !showTeacherModes && !showClassSelector && !showInsights && currentMode !== 'discussion' && currentMode !== 'quiz' && currentMode !== 'worksheet' && currentMode !== 'exam' && (currentMode !== 'revision' || revisionTopic) && (currentMode !== 'homework' || homeworkTopic) && !teacherMode && (
+        {!showModeSetup && !showTeacherModes && !showClassSelector && !showInsights && currentMode !== 'qa' && currentMode !== 'discussion' && currentMode !== 'quiz' && currentMode !== 'worksheet' && currentMode !== 'exam' && (currentMode !== 'revision' || revisionTopic) && (currentMode !== 'homework' || homeworkTopic) && !teacherMode && (
           <ChatInput
             onSendMessage={handleSendMessage}
             disabled={false}

@@ -80,24 +80,54 @@ class AIService:
         duration: int = 30
     ) -> Dict[str, Any]:
         """
-        Generate quiz questions
+        Generate quiz questions or worksheet with multiple question types
         """
         if question_types is None:
             question_types = ["multiple-choice"]
         
         system_prompt = f"You are an expert teacher creating educational content for {subject}."
         
+        # Create a distribution of question types based on the input
+        question_type_distribution = {}
+        if len(question_types) == 1:
+            # If only one type, all questions will be of that type
+            question_type_distribution[question_types[0]] = num_questions
+        else:
+            # Distribute questions among the types
+            base_count = num_questions // len(question_types)
+            remainder = num_questions % len(question_types)
+            
+            for i, q_type in enumerate(question_types):
+                question_type_distribution[q_type] = base_count + (1 if i < remainder else 0)
+        
+        distribution_text = "\n".join([f"- {count} {q_type} questions" for q_type, count in question_type_distribution.items()])
+        
         prompt = f"""
-        Create a {difficulty} level quiz about {topic} in {subject}.
-        The quiz should have {num_questions} questions of the following types: {', '.join(question_types)}.
-        The quiz should be designed to be completed in {duration} minutes.
+        Create a {difficulty} level worksheet about {topic} in {subject}.
+        The worksheet should have {num_questions} questions with the following distribution:
+        {distribution_text}
+        The worksheet should be designed to be completed in {duration} minutes.
         
         For each question, provide:
         1. The question text (in a field called "question")
         2. The question type (in a field called "type")
-        3. Options (if multiple choice, in a field called "options" as an array of text strings)
+        3. Options (if multiple choice, true/false, or matching, in a field called "options" as an array of text strings)
         4. The correct answer (in a field called "correctAnswer")
         5. An explanation of the answer (in a field called "explanation")
+        
+        Question types to include:
+        - "multiple-choice": Questions with 4 options where only one is correct
+        - "short-answer": Questions requiring brief text responses (1-2 sentences)
+        - "long-answer": Questions requiring detailed explanations (paragraphs)
+        - "true-false": Statements to be marked as true or false
+        - "fill-blank": Sentences with missing words to be filled in
+        - "matching": Pairs of items to be matched (provide options as the items to match)
+        
+        IMPORTANT: When including mathematical formulas or scientific notation in explanations:
+        - Use simple text notation instead of LaTeX (e.g., "F = G * m1 * m2 / r^2" instead of "F = G \\frac{{m_1 m_2}}{{r^2}}")
+        - Use standard text formatting for subscripts and superscripts (e.g., "H2O" instead of "H₂O")
+        - Avoid any LaTeX-style escapes like \\(, \\), \\[, \\], \\frac, etc.
+        - Use plain text that can be easily parsed as JSON
         
         Format your response as a valid JSON object with a "questions" array containing each question object.
         Each question object must have the exact field names: "question", "type", "options", "correctAnswer", "explanation".
@@ -107,13 +137,22 @@ class AIService:
           "questions": [
             {{
               "question": "What is the capital of France?",
-              "type": "single-choice",
+              "type": "multiple-choice",
               "options": ["London", "Berlin", "Paris", "Madrid"],
               "correctAnswer": "Paris",
               "explanation": "Paris is the capital and most populous city of France."
+            }},
+            {{
+              "question": "Explain the process of photosynthesis in your own words.",
+              "type": "short-answer",
+              "options": [],
+              "correctAnswer": "Photosynthesis is the process by which plants convert light energy into chemical energy.",
+              "explanation": "A good answer should mention plants, light energy, conversion, and chemical energy."
             }}
           ]
         }}
+        
+        CRITICAL: Ensure your response is valid JSON with no escape sequence errors.
         """
         
         messages = [{"role": "system", "content": system_prompt}]
@@ -379,6 +418,8 @@ class AIService:
                 return {"error": f"Request error: {str(e)}"}
             except Exception as e:
                 return {"error": f"Unexpected error: {str(e)}"}
+
+
 
 
 # Create a singleton instance

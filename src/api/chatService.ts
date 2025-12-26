@@ -30,6 +30,21 @@ export interface MessageCreate {
   content: string;
 }
 
+export interface QARequest {
+  question: string;
+  student_profile_id: string;
+  subject?: string;
+}
+
+export interface QAResponse {
+  id: string;
+  chat_session_id: string;
+  content: string;
+  sender_type: string;
+  timestamp: string;
+  suggested_questions?: string[];
+}
+
 // Chat API service
 export const chatService = {
   // Get all chat sessions for the current user
@@ -58,5 +73,10 @@ export const chatService = {
   // Send a message and get AI response
   sendMessage: async (sessionId: string, messageData: MessageCreate): Promise<Message> => {
     return apiService.post<Message>(`/chat/sessions/${sessionId}/messages`, messageData);
+  },
+
+  // Q&A mode endpoint - get direct answer to a question
+  askQuestion: async (qaData: QARequest): Promise<QAResponse> => {
+    return apiService.post<QAResponse>('/llm/qa', qaData);
   }
 };

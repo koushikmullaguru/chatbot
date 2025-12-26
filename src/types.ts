@@ -60,7 +60,7 @@ export interface ChatSession {
 
 export interface QuizQuestion {
   id: string;
-  type: 'multiple-choice' | 'single-choice' | 'short-answer';
+  type: 'multiple-choice' | 'single-choice' | 'short-answer' | 'long-answer';
   question: string;
   options?: string[];
   correctAnswer: string | string[];

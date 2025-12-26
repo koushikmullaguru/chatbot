@@ -17,8 +17,11 @@ class AssessmentType(str, enum.Enum):
 class QuestionType(str, enum.Enum):
     MULTIPLE_CHOICE = "multiple-choice"
     SHORT_ANSWER = "short-answer"
+    LONG_ANSWER = "long-answer"
     ESSAY = "essay"
     TRUE_FALSE = "true-false"
+    FILL_BLANK = "fill-blank"
+    MATCHING = "matching"
 
 
 class Difficulty(str, enum.Enum):

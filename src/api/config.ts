@@ -32,6 +32,7 @@ export const API_ENDPOINTS = {
   QUIZZES: '/assessment/quizzes',
   EXAMS: '/assessment/exams',
   WORKSHEETS: '/assessment/worksheets',
+  SUBMIT_QUIZ: '/assessment/submit-quiz',
   
   // Generator
   GENERATE_QUIZ: '/generator/quiz',

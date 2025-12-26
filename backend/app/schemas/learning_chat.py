@@ -63,6 +63,8 @@ class MessageResponse(MessageBase):
         from_attributes = True
 
 
+
+
 # Response with nested data
 class ChatSessionWithMessages(ChatSessionResponse):
     messages: List[MessageResponse] = []

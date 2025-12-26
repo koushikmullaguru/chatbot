@@ -32,7 +32,7 @@ class AssessmentResponse(AssessmentBase):
     id: str
     created_by: str
 
-    @field_validator('id', 'class_id', 'subject_id', 'topic_id', mode='before')
+    @field_validator('id', 'class_id', 'subject_id', 'topic_id', 'created_by', mode='before')
     @classmethod
     def convert_uuid_to_str(cls, v: Any) -> Any:
         if isinstance(v, UUID):
@@ -53,6 +53,22 @@ class QuestionBase(BaseModel):
     explanation: Optional[str] = None
     marks: int = 1
     order: int
+    
+    @field_validator('type')
+    @classmethod
+    def validate_question_type(cls, v):
+        valid_types = [
+            "multiple-choice",
+            "short-answer",
+            "long-answer",
+            "essay",
+            "true-false",
+            "fill-blank",
+            "matching"
+        ]
+        if v not in valid_types:
+            raise ValueError(f"Question type must be one of {valid_types}")
+        return v
 
 
 class QuestionCreate(QuestionBase):

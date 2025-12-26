@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     # OpenRouter AI settings
     OPENROUTER_API_KEY: str = os.getenv("OPENROUTER_API_KEY", "")
     AI_API_URL: str = os.getenv("AI_API_URL", "https://openrouter.ai/api/v1/chat/completions")
-    AI_MODEL: str = os.getenv("AI_MODEL", "openai/gpt-3.5-turbo")
+    AI_MODEL: str = os.getenv("AI_MODEL", "openai/gpt-oss-20b:free")
     
     # CORS settings
     CORS_ORIGINS: list = ["http://localhost:3000", "http://localhost:5173", "http://127.0.0.1:3000", "http://127.0.0.1:5173"]

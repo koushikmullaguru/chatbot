@@ -9,7 +9,6 @@ from ..core.database import Base
 
 
 class ChatMode(str, enum.Enum):
-    QA = "qa"
     QUIZ = "quiz"
     PLANNER = "planner"
     DISCUSSION = "discussion"

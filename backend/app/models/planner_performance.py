@@ -21,7 +21,6 @@ class TaskStatus(str, enum.Enum):
 
 
 class StudyMode(str, enum.Enum):
-    QA = "qa"
     EXAM = "exam"
     REVISION = "revision"
 

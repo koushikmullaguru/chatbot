@@ -32,7 +32,9 @@ interface QuizApiResponse {
   difficulty?: string;
   num_questions?: number;
   duration?: number;
-  questions: QuizQuestion[];
+  questions?: QuizQuestion[];
+  error?: string;
+  message?: string;
 }
 
 // Update the Quiz interface to use ExtendedQuizQuestion
@@ -43,7 +45,7 @@ interface ExtendedQuiz {
   questions: ExtendedQuizQuestion[];
 }
 
-export function QuizMode({ onComplete, quizParams, studentProfileId }: QuizModeProps) {
+export function QuizModeFinal({ onComplete, quizParams, studentProfileId }: QuizModeProps) {
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [answers, setAnswers] = useState<Record<string, string | string[]>>({});
   const [showResults, setShowResults] = useState(false);
@@ -57,7 +59,7 @@ export function QuizMode({ onComplete, quizParams, studentProfileId }: QuizModeP
   
   // Debug log to check component state
   console.log('QuizMode render state:', { quiz, isLoading, error, quizGenerated });
-  
+
   // Add a useEffect to log state changes
   useEffect(() => {
     console.log('QuizMode state changed:', { quiz, isLoading, error, quizGenerated });
@@ -94,112 +96,128 @@ export function QuizMode({ onComplete, quizParams, studentProfileId }: QuizModeP
         
         // Log the entire response for debugging
         console.log('Full API response:', response);
+        
+        // Check if response has an error
+        if (response.error) {
+          console.error('API returned an error:', response.error);
+          setError(`Failed to generate quiz: ${response.error}`);
+          setIsLoading(false);
+          return;
+        }
+        
+        // Check if response has questions
+        if (!response.questions || !Array.isArray(response.questions) || response.questions.length === 0) {
+          console.error('API response does not contain valid questions:', response);
+          setError('Failed to generate quiz questions. Please try again.');
+          setIsLoading(false);
+          return;
+        }
+        
         console.log('Response questions:', response?.questions);
         console.log('Questions type:', typeof response?.questions);
         console.log('Is questions an array:', Array.isArray(response?.questions));
         console.log('Questions length:', response?.questions?.length);
         
-        if (response && response.questions && Array.isArray(response.questions) && response.questions.length > 0) {
-          // Transform the API response to match the Quiz interface
-          const transformedQuiz: Quiz = {
-            id: response.assessment_id || response.id || `quiz-${Date.now()}`,
-            title: `${response.subject || 'General'} Quiz - ${response.chapter || 'General Knowledge'}`,
-            totalQuestions: response.questions.length,
-            questions: response.questions.map((q: any, index: number) => {
-              // Log the question object for debugging
-              console.log(`Question ${index + 1}:`, q);
-              console.log(`Question ${index + 1} keys:`, Object.keys(q));
-              
-              // Ensure question text is properly extracted
-              let questionText = '';
-              if (q.question) {
-                questionText = q.question;
-              } else if (q.text) {
-                questionText = q.text;
-              } else if (q.title) {
-                questionText = q.title;
-              } else if (q.prompt) {
-                questionText = q.prompt;
-              }
-              
-              // Log if question text is missing
-              if (!questionText) {
-                console.warn(`Question ${index + 1} is missing question text. Available fields:`, Object.keys(q));
-              }
-              
-              // Log options structure
-              console.log(`Question ${index + 1} options:`, q.options);
-              
-              // Process options to ensure they're strings
-              let processedOptions: string[] = [];
-              if (q.options) {
-                if (Array.isArray(q.options)) {
-                  processedOptions = q.options.map((option: any) =>
-                    typeof option === 'string' ? option : String(option)
-                  );
-                } else if (typeof q.options === 'object') {
-                  // If options is an object, try to extract values
-                  processedOptions = Object.values(q.options).map((val: any) =>
-                    typeof val === 'string' ? val : String(val)
-                  );
-                }
-              }
-              
-              console.log(`Question ${index + 1} processed options:`, processedOptions);
-              console.log(`Question ${index + 1} correctAnswer:`, q.correctAnswer);
-              console.log(`Question ${index + 1} correctAnswer type:`, typeof q.correctAnswer);
-              
-              // Process correctAnswer to ensure it's in the right format
-              let processedCorrectAnswer = q.correctAnswer;
-              if (q.type === 'multiple-choice' && typeof q.correctAnswer === 'string') {
-                // If correctAnswer is a string but question type is multiple-choice,
-                // it might need to be converted to an array
-                try {
-                  processedCorrectAnswer = JSON.parse(q.correctAnswer);
-                } catch (e) {
-                  // If parsing fails, keep it as is
-                  console.warn(`Failed to parse correctAnswer for question ${index + 1}:`, e);
-                }
-              }
-              
-              console.log(`Question ${index + 1} processed correctAnswer:`, processedCorrectAnswer);
-              
-              return {
-                // Use the actual question ID from the database if available
-                id: q.id || `q${index + 1}`,
-                // Store the database question ID separately for submission
-                dbQuestionId: q.id || `q${index + 1}`,
-                type: q.type || 'single-choice',
-                question: questionText,
-                options: processedOptions,
-                correctAnswer: processedCorrectAnswer || '',
-                explanation: q.explanation || ''
-              };
-            })
-          };
-          
-          console.log('Setting quiz state:', transformedQuiz);
-          // Use a callback to ensure we're using the latest state
-          setQuiz(prevQuiz => {
-            console.log('Previous quiz state:', prevQuiz);
-            console.log('New quiz state:', transformedQuiz);
-            return transformedQuiz;
-          });
-          
-          // Use a timeout to ensure the state is updated before setting loading to false
-          setTimeout(() => {
-            if (isMounted) {
-              // Mark quiz as generated only after successful completion
-              setQuizGenerated(true);
-              console.log('Quiz state set successfully');
-              // Explicitly set loading to false
-              setIsLoading(false);
+        // Ensure questions is an array
+        const questions = Array.isArray(response.questions) ? response.questions : [response.questions];
+        console.log('Processed questions array:', questions);
+        
+        // Transform the API response to match the Quiz interface
+        const transformedQuiz: Quiz = {
+          id: response.assessment_id || response.id || `quiz-${Date.now()}`,
+          title: `${response.subject || 'General'} Quiz - ${response.chapter || 'General Knowledge'}`,
+          totalQuestions: questions.length,
+          questions: questions.map((q: any, index: number) => {
+            // Log the question object for debugging
+            console.log(`Question ${index + 1}:`, q);
+            console.log(`Question ${index + 1} keys:`, Object.keys(q));
+            
+            // Ensure question text is properly extracted
+            let questionText = '';
+            if (q.question) {
+              questionText = q.question;
+            } else if (q.text) {
+              questionText = q.text;
+            } else if (q.title) {
+              questionText = q.title;
+            } else if (q.prompt) {
+              questionText = q.prompt;
             }
-          }, 100);
-        } else {
-          console.error('Invalid API response:', response);
-          setError('Failed to generate quiz questions. Please try again.');
-        }
+            
+            // Log if question text is missing
+            if (!questionText) {
+              console.warn(`Question ${index + 1} is missing question text. Available fields:`, Object.keys(q));
+            }
+            
+            // Log options structure
+            console.log(`Question ${index + 1} options:`, q.options);
+            
+            // Process options to ensure they're strings
+            let processedOptions: string[] = [];
+            if (q.options) {
+              if (Array.isArray(q.options)) {
+                processedOptions = q.options.map((option: any) =>
+                  typeof option === 'string' ? option : String(option)
+                );
+              } else if (typeof q.options === 'object') {
+                // If options is an object, try to extract values
+                processedOptions = Object.values(q.options).map((val: any) =>
+                  typeof val === 'string' ? val : String(val)
+                );
+              }
+            }
+            
+            console.log(`Question ${index + 1} processed options:`, processedOptions);
+            console.log(`Question ${index + 1} correctAnswer:`, q.correctAnswer);
+            console.log(`Question ${index + 1} correctAnswer type:`, typeof q.correctAnswer);
+            
+            // Process correctAnswer to ensure it's in the right format
+            let processedCorrectAnswer = q.correctAnswer;
+            if (q.type === 'multiple-choice' && typeof q.correctAnswer === 'string') {
+              // If correctAnswer is a string but question type is multiple-choice,
+              // it might need to be converted to an array
+              try {
+                processedCorrectAnswer = JSON.parse(q.correctAnswer);
+              } catch (e) {
+                // If parsing fails, keep it as is
+                console.warn(`Failed to parse correctAnswer for question ${index + 1}:`, e);
+              }
+            }
+            
+            console.log(`Question ${index + 1} processed correctAnswer:`, processedCorrectAnswer);
+            
+            return {
+              // Use the actual question ID from the database if available
+              id: q.id || `q${index + 1}`,
+              // Store the database question ID separately for submission
+              dbQuestionId: q.id || `q${index + 1}`,
+              type: q.type || 'single-choice',
+              question: questionText,
+              options: processedOptions,
+              correctAnswer: processedCorrectAnswer || '',
+              explanation: q.explanation || ''
+            };
+          })
+        };
+        
+        console.log('Setting quiz state:', transformedQuiz);
+        // Use a callback to ensure we're using the latest state
+        setQuiz(prevQuiz => {
+          console.log('Previous quiz state:', prevQuiz);
+          console.log('New quiz state:', transformedQuiz);
+          return transformedQuiz;
+        });
+        
+        // Use a timeout to ensure the state is updated before setting loading to false
+        setTimeout(() => {
+          if (isMounted) {
+            // Mark quiz as generated only after successful completion
+            setQuizGenerated(true);
+            console.log('Quiz state set successfully');
+            // Explicitly set loading to false
+            setIsLoading(false);
+          }
+        }, 100);
       } catch (err) {
         console.error('Error generating quiz:', err);
         // Only update error state if component is still mounted and request wasn't cancelled

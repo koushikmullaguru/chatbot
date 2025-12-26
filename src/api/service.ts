@@ -7,6 +7,7 @@ class ApiService {
   private baseUrl: string;
   private token: string | null = null;
   private isRefreshing = false;
+  private pendingRequests: Map<string, Promise<any>> = new Map();
 
   constructor(baseUrl: string = API_BASE_URL) {
     this.baseUrl = baseUrl;
@@ -72,6 +73,15 @@ class ApiService {
   ): Promise<T> {
     const url = `${this.baseUrl}${endpoint}`;
     
+    // Create a unique key for this request based on URL, method, and body
+    const requestKey = `${options.method || 'GET'}:${url}:${JSON.stringify(options.body || '')}`;
+    
+    // Check if there's already an identical request in progress
+    if (this.pendingRequests.has(requestKey)) {
+      console.log(`Request deduplication: Reusing existing request for ${requestKey}`);
+      return this.pendingRequests.get(requestKey) as Promise<T>;
+    }
+    
     const headers: Record<string, string> = {
       ...DEFAULT_REQUEST_OPTIONS.headers as Record<string, string>,
       ...(options.headers as Record<string, string> || {}),
@@ -88,45 +98,56 @@ class ApiService {
       headers,
     };
 
-    try {
-      const response = await fetch(url, config);
-      
-      // Handle 401 Unauthorized - possibly expired token
-      if (response.status === 401 && retryCount > 0 && this.token) {
-        try {
-          // Try to refresh the token
-          const newToken = await this.handleTokenRefresh();
-          
-          // Update the token
-          this.token = newToken;
-          headers['Authorization'] = `Bearer ${newToken}`;
-          
-          // Retry the request with new token
-          return this.request<T>(endpoint, options, retryCount - 1);
-        } catch (refreshError) {
-          // If refresh fails, clear token and throw error
-          this.clearToken();
-          throw new Error('Session expired. Please login again.');
+    // Create the request promise
+    const requestPromise = (async () => {
+      try {
+        const response = await fetch(url, config);
+        
+        // Handle 401 Unauthorized - possibly expired token
+        if (response.status === 401 && retryCount > 0 && this.token) {
+          try {
+            // Try to refresh the token
+            const newToken = await this.handleTokenRefresh();
+            
+            // Update the token
+            this.token = newToken;
+            headers['Authorization'] = `Bearer ${newToken}`;
+            
+            // Retry the request with new token
+            return this.request<T>(endpoint, options, retryCount - 1);
+          } catch (refreshError) {
+            // If refresh fails, clear token and throw error
+            this.clearToken();
+            throw new Error('Session expired. Please login again.');
+          }
         }
-      }
-      
-      // Handle other HTTP errors
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        const error = new Error(errorData.message || `HTTP error! status: ${response.status}`);
         
-        // Add response status to error for better handling
-        (error as any).status = response.status;
-        (error as any).response = errorData;
-        
-        throw error;
-      }
+        // Handle other HTTP errors
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          const error = new Error(errorData.message || `HTTP error! status: ${response.status}`);
+          
+          // Add response status to error for better handling
+          (error as any).status = response.status;
+          (error as any).response = errorData;
+          
+          throw error;
+        }
 
-      return await response.json();
-    } catch (error) {
-      console.error('API request failed:', error);
-      throw error;
-    }
+        return await response.json();
+      } catch (error) {
+        console.error('API request failed:', error);
+        throw error;
+      } finally {
+        // Remove the request from pending requests when it completes (whether successful or not)
+        this.pendingRequests.delete(requestKey);
+      }
+    })();
+
+    // Store the promise in the pending requests map
+    this.pendingRequests.set(requestKey, requestPromise);
+    
+    return requestPromise;
   }
 
   // GET request
@@ -190,6 +211,65 @@ export const generateQuiz = async (quizData: {
     return response;
   } catch (error) {
     console.error('Error generating quiz:', error);
+    throw error;
+  }
+};
+
+// Generate worksheet
+export const generateWorksheet = async (worksheetData: {
+  class_id: string;
+  subject_id: string;
+  chapter_id: string;
+  difficulty: string;
+  num_questions: number;
+  question_types: string[];
+  duration: number;
+}) => {
+  try {
+    const response = await apiService.post('/generator/worksheet', worksheetData);
+    return response;
+  } catch (error) {
+    console.error('Error generating worksheet:', error);
+    throw error;
+  }
+};
+
+// Submit quiz answers
+export const submitQuiz = async (quizId: string, answers: Array<{
+  question_id: string;
+  answer: string;
+}>, studentProfileId: string) => {
+  try {
+    const response = await apiService.post(`/assessments/submit-quiz/${quizId}`, {
+      answers: answers.map(answer => ({
+        question_id: answer.question_id,
+        answer: answer.answer,
+        student_profile_id: studentProfileId
+      }))
+    });
+    return response;
+  } catch (error) {
+    console.error('Error submitting quiz:', error);
+    throw error;
+  }
+};
+
+// Submit worksheet answers
+export const submitWorksheet = async (worksheetId: string, answers: Array<{
+  question_id: string;
+  answer: string;
+}>, studentProfileId: string) => {
+  try {
+    const response = await apiService.post(`/assessments/submit-worksheet/${worksheetId}`, {
+      answers: answers.map(answer => ({
+        question_id: answer.question_id,
+        answer: answer.answer,
+        student_profile_id: studentProfileId
+      }))
+    });
+    return response;
+  } catch (error) {
+    console.error('Error submitting worksheet:', error);
     throw error;
   }
 };

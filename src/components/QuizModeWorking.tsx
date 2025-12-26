@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Quiz, QuizQuestion } from '../types';
 import { Check, X, ArrowRight, RotateCcw, Trophy, Loader } from 'lucide-react';
-import { generateQuiz, submitQuiz } from '../api/service';
+import { generateQuiz, generateWorksheet, submitQuiz, submitWorksheet } from '../api/service';
 
 // Extend the QuizQuestion type to include the database question ID
 interface ExtendedQuizQuestion extends QuizQuestion {
@@ -20,6 +20,7 @@ interface QuizModeProps {
     duration: number;
   };
   studentProfileId?: string;
+  mode?: 'quiz' | 'worksheet'; // Add mode prop
 }
 
 // Define the API response interface
@@ -32,7 +33,9 @@ interface QuizApiResponse {
   difficulty?: string;
   num_questions?: number;
   duration?: number;
-  questions: QuizQuestion[];
+  questions?: QuizQuestion[];
+  error?: string;
+  message?: string;
 }
 
 // Update the Quiz interface to use ExtendedQuizQuestion
@@ -43,7 +46,7 @@ interface ExtendedQuiz {
   questions: ExtendedQuizQuestion[];
 }
 
-export function QuizMode({ onComplete, quizParams, studentProfileId }: QuizModeProps) {
+export function QuizModeWorking({ onComplete, quizParams, studentProfileId, mode = 'quiz' }: QuizModeProps) {
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [answers, setAnswers] = useState<Record<string, string | string[]>>({});
   const [showResults, setShowResults] = useState(false);
@@ -56,12 +59,12 @@ export function QuizMode({ onComplete, quizParams, studentProfileId }: QuizModeP
   const [isRetrying, setIsRetrying] = useState(false);
   
   // Debug log to check component state
-  console.log('QuizMode render state:', { quiz, isLoading, error, quizGenerated });
-  
+  console.log('QuizMode render state:', { quiz, isLoading, error, quizGenerated, mode });
+
   // Add a useEffect to log state changes
   useEffect(() => {
-    console.log('QuizMode state changed:', { quiz, isLoading, error, quizGenerated });
-  }, [quiz, isLoading, error, quizGenerated]);
+    console.log('QuizMode state changed:', { quiz, isLoading, error, quizGenerated, mode });
+  }, [quiz, isLoading, error, quizGenerated, mode]);
 
   useEffect(() => {
     // Add a flag to prevent multiple API calls
@@ -86,125 +89,146 @@ export function QuizMode({ onComplete, quizParams, studentProfileId }: QuizModeP
         setError(null);
         setIsRetrying(false);
         
-        // Call the generate quiz API
-        const response = await generateQuiz(quizParams) as QuizApiResponse;
+        // Call the appropriate API based on mode
+        let response: QuizApiResponse;
+        if (mode === 'worksheet') {
+          response = await generateWorksheet(quizParams) as QuizApiResponse;
+        } else {
+          response = await generateQuiz(quizParams) as QuizApiResponse;
+        }
         
         // Only update state if component is still mounted and request wasn't cancelled
         if (!isMounted || requestController.signal.aborted) return;
         
         // Log the entire response for debugging
         console.log('Full API response:', response);
+        
+        // Check if response has an error
+        if (response.error) {
+          console.error('API returned an error:', response.error);
+          setError(`Failed to generate ${mode}: ${response.error}`);
+          setIsLoading(false);
+          return;
+        }
+        
+        // Check if response has questions
+        if (!response.questions || !Array.isArray(response.questions) || response.questions.length === 0) {
+          console.error('API response does not contain valid questions:', response);
+          setError(`Failed to generate ${mode} questions. Please try again.`);
+          setIsLoading(false);
+          return;
+        }
+        
         console.log('Response questions:', response?.questions);
         console.log('Questions type:', typeof response?.questions);
         console.log('Is questions an array:', Array.isArray(response?.questions));
         console.log('Questions length:', response?.questions?.length);
         
-        if (response && response.questions && Array.isArray(response.questions) && response.questions.length > 0) {
-          // Transform the API response to match the Quiz interface
-          const transformedQuiz: Quiz = {
-            id: response.assessment_id || response.id || `quiz-${Date.now()}`,
-            title: `${response.subject || 'General'} Quiz - ${response.chapter || 'General Knowledge'}`,
-            totalQuestions: response.questions.length,
-            questions: response.questions.map((q: any, index: number) => {
-              // Log the question object for debugging
-              console.log(`Question ${index + 1}:`, q);
-              console.log(`Question ${index + 1} keys:`, Object.keys(q));
-              
-              // Ensure question text is properly extracted
-              let questionText = '';
-              if (q.question) {
-                questionText = q.question;
-              } else if (q.text) {
-                questionText = q.text;
-              } else if (q.title) {
-                questionText = q.title;
-              } else if (q.prompt) {
-                questionText = q.prompt;
-              }
-              
-              // Log if question text is missing
-              if (!questionText) {
-                console.warn(`Question ${index + 1} is missing question text. Available fields:`, Object.keys(q));
-              }
-              
-              // Log options structure
-              console.log(`Question ${index + 1} options:`, q.options);
-              
-              // Process options to ensure they're strings
-              let processedOptions: string[] = [];
-              if (q.options) {
-                if (Array.isArray(q.options)) {
-                  processedOptions = q.options.map((option: any) =>
-                    typeof option === 'string' ? option : String(option)
-                  );
-                } else if (typeof q.options === 'object') {
-                  // If options is an object, try to extract values
-                  processedOptions = Object.values(q.options).map((val: any) =>
-                    typeof val === 'string' ? val : String(val)
-                  );
-                }
-              }
-              
-              console.log(`Question ${index + 1} processed options:`, processedOptions);
-              console.log(`Question ${index + 1} correctAnswer:`, q.correctAnswer);
-              console.log(`Question ${index + 1} correctAnswer type:`, typeof q.correctAnswer);
-              
-              // Process correctAnswer to ensure it's in the right format
-              let processedCorrectAnswer = q.correctAnswer;
-              if (q.type === 'multiple-choice' && typeof q.correctAnswer === 'string') {
-                // If correctAnswer is a string but question type is multiple-choice,
-                // it might need to be converted to an array
-                try {
-                  processedCorrectAnswer = JSON.parse(q.correctAnswer);
-                } catch (e) {
-                  // If parsing fails, keep it as is
-                  console.warn(`Failed to parse correctAnswer for question ${index + 1}:`, e);
-                }
-              }
-              
-              console.log(`Question ${index + 1} processed correctAnswer:`, processedCorrectAnswer);
-              
-              return {
-                // Use the actual question ID from the database if available
-                id: q.id || `q${index + 1}`,
-                // Store the database question ID separately for submission
-                dbQuestionId: q.id || `q${index + 1}`,
-                type: q.type || 'single-choice',
-                question: questionText,
-                options: processedOptions,
-                correctAnswer: processedCorrectAnswer || '',
-                explanation: q.explanation || ''
-              };
-            })
-          };
-          
-          console.log('Setting quiz state:', transformedQuiz);
-          // Use a callback to ensure we're using the latest state
-          setQuiz(prevQuiz => {
-            console.log('Previous quiz state:', prevQuiz);
-            console.log('New quiz state:', transformedQuiz);
-            return transformedQuiz;
-          });
-          
-          // Use a timeout to ensure the state is updated before setting loading to false
-          setTimeout(() => {
-            if (isMounted) {
-              // Mark quiz as generated only after successful completion
-              setQuizGenerated(true);
-              console.log('Quiz state set successfully');
-              // Explicitly set loading to false
-              setIsLoading(false);
+        // Ensure questions is an array
+        const questions = Array.isArray(response.questions) ? response.questions : [response.questions];
+        console.log('Processed questions array:', questions);
+        
+        // Transform the API response to match the Quiz interface
+        const transformedQuiz: Quiz = {
+          id: response.assessment_id || response.id || `${mode}-${Date.now()}`,
+          title: `${response.subject || 'General'} ${mode === 'quiz' ? 'Quiz' : 'Worksheet'} - ${response.chapter || 'General Knowledge'}`,
+          totalQuestions: questions.length,
+          questions: questions.map((q: any, index: number) => {
+            // Log the question object for debugging
+            console.log(`Question ${index + 1}:`, q);
+            console.log(`Question ${index + 1} keys:`, Object.keys(q));
+             
+            // Ensure question text is properly extracted
+            let questionText = '';
+            if (q.question) {
+              questionText = q.question;
+            } else if (q.text) {
+              questionText = q.text;
+            } else if (q.title) {
+              questionText = q.title;
+            } else if (q.prompt) {
+              questionText = q.prompt;
             }
-          }, 100);
-        } else {
-          console.error('Invalid API response:', response);
-          setError('Failed to generate quiz questions. Please try again.');
-        }
+            
+            // Log if question text is missing
+            if (!questionText) {
+              console.warn(`Question ${index + 1} is missing question text. Available fields:`, Object.keys(q));
+            }
+            
+            // Log options structure
+            console.log(`Question ${index + 1} options:`, q.options);
+            
+            // Process options to ensure they're strings
+            let processedOptions: string[] = [];
+            if (q.options) {
+              if (Array.isArray(q.options)) {
+                processedOptions = q.options.map((option: any) =>
+                  typeof option === 'string' ? option : String(option)
+                );
+              } else if (typeof q.options === 'object') {
+                // If options is an object, try to extract values
+                processedOptions = Object.values(q.options).map((val: any) =>
+                  typeof val === 'string' ? val : String(val)
+                );
+              }
+            }
+            
+            console.log(`Question ${index + 1} processed options:`, processedOptions);
+            console.log(`Question ${index + 1} correctAnswer:`, q.correctAnswer);
+            console.log(`Question ${index + 1} correctAnswer type:`, typeof q.correctAnswer);
+            
+            // Process correctAnswer to ensure it's in the right format
+            let processedCorrectAnswer = q.correctAnswer;
+            if (q.type === 'multiple-choice' && typeof q.correctAnswer === 'string') {
+              // If correctAnswer is a string but question type is multiple-choice,
+              // it might need to be converted to an array
+              try {
+                processedCorrectAnswer = JSON.parse(q.correctAnswer);
+              } catch (e) {
+                // If parsing fails, keep it as is
+                console.warn(`Failed to parse correctAnswer for question ${index + 1}:`, e);
+              }
+            }
+            
+            console.log(`Question ${index + 1} processed correctAnswer:`, processedCorrectAnswer);
+            
+            return {
+              // Use the actual question ID from the database if available
+              id: q.id || `q${index + 1}`,
+              // Store the database question ID separately for submission
+              dbQuestionId: q.id || `q${index + 1}`,
+              type: q.type || 'single-choice',
+              question: questionText,
+              options: processedOptions,
+              correctAnswer: processedCorrectAnswer || '',
+              explanation: q.explanation || ''
+            };
+          })
+        };
+        
+        console.log('Setting quiz state:', transformedQuiz);
+        // Use a callback to ensure we're using the latest state
+        setQuiz(prevQuiz => {
+          console.log('Previous quiz state:', prevQuiz);
+          console.log('New quiz state:', transformedQuiz);
+          return transformedQuiz;
+        });
+        
+        // Use a timeout to ensure the state is updated before setting loading to false
+        setTimeout(() => {
+          if (isMounted) {
+            // Mark quiz as generated only after successful completion
+            setQuizGenerated(true);
+            console.log('Quiz state set successfully');
+            // Explicitly set loading to false
+            setIsLoading(false);
+          }
+        }, 100);
       } catch (err) {
-        console.error('Error generating quiz:', err);
+        console.error(`Error generating ${mode}:`, err);
         // Only update error state if component is still mounted and request wasn't cancelled
         if (isMounted && !requestController.signal.aborted) {
-          setError('Failed to generate quiz. Please try again.');
+          setError(`Failed to generate ${mode}. Please try again.`);
         }
       } finally {
         // Only update loading state if component is still mounted and request wasn't cancelled
@@ -221,7 +245,7 @@ export function QuizMode({ onComplete, quizParams, studentProfileId }: QuizModeP
       isMounted = false;
       requestController.abort();
     };
-  }, [quizParams, quizGenerated]);
+  }, [quizParams, quizGenerated, mode]);
 
   // Show loading state
   if (isLoading) {
@@ -230,7 +254,7 @@ export function QuizMode({ onComplete, quizParams, studentProfileId }: QuizModeP
       <div className="h-full flex items-center justify-center bg-gradient-to-br from-green-50 to-blue-50 dark:from-gray-900 dark:to-gray-800">
         <div className="text-center">
           <Loader className="w-12 h-12 animate-spin text-blue-500 mx-auto mb-4" />
-          <p className="text-gray-600 dark:text-gray-400">Generating quiz...</p>
+          <p className="text-gray-600 dark:text-gray-400">Generating {mode}...</p>
         </div>
       </div>
     );
@@ -281,7 +305,7 @@ export function QuizMode({ onComplete, quizParams, studentProfileId }: QuizModeP
     return (
       <div className="h-full flex items-center justify-center bg-gradient-to-br from-green-50 to-blue-50 dark:from-gray-900 dark:to-gray-800">
         <div className="text-center">
-          <p className="text-gray-600 dark:text-gray-400">No quiz available</p>
+          <p className="text-gray-600 dark:text-gray-400">No {mode} available</p>
         </div>
       </div>
     );
@@ -315,7 +339,7 @@ export function QuizMode({ onComplete, quizParams, studentProfileId }: QuizModeP
 
   const handleSubmitQuiz = async () => {
     if (!quiz || !studentProfileId) {
-      console.error('Cannot submit quiz: missing quiz or student profile ID');
+      console.error(`Cannot submit ${mode}: missing quiz or student profile ID`);
       return;
     }
 
@@ -333,16 +357,22 @@ export function QuizMode({ onComplete, quizParams, studentProfileId }: QuizModeP
         };
       });
       
-      console.log('Submitting quiz answers:', formattedAnswers);
+      console.log(`Submitting ${mode} answers:`, formattedAnswers);
       
-      // Submit quiz answers
-      const result = await submitQuiz(quiz.id, formattedAnswers, studentProfileId);
-      console.log('Quiz submission result:', result);
+      // Submit answers using the appropriate API
+      let result;
+      if (mode === 'worksheet') {
+        result = await submitWorksheet(quiz.id, formattedAnswers, studentProfileId);
+      } else {
+        result = await submitQuiz(quiz.id, formattedAnswers, studentProfileId);
+      }
+      
+      console.log(`${mode} submission result:`, result);
       
       setShowResults(true);
     } catch (error) {
-      console.error('Error submitting quiz:', error);
-      setError('Failed to submit quiz. Please try again.');
+      console.error(`Error submitting ${mode}:`, error);
+      setError(`Failed to submit ${mode}. Please try again.`);
     } finally {
       setIsSubmitting(false);
     }
@@ -370,7 +400,7 @@ export function QuizMode({ onComplete, quizParams, studentProfileId }: QuizModeP
     console.log(`Correct answer:`, question.correctAnswer);
     console.log(`Question type:`, question.type);
     
-    if (question.type === 'short-answer') {
+    if (question.type === 'short-answer' || question.type === 'long-answer') {
       let correctAnswer = '';
       if (typeof question.correctAnswer === 'string') {
         correctAnswer = question.correctAnswer.toLowerCase().trim();
@@ -427,7 +457,7 @@ export function QuizMode({ onComplete, quizParams, studentProfileId }: QuizModeP
   };
 
   const canProceed = () => {
-    if (currentQuestion.type === 'short-answer') {
+    if (currentQuestion.type === 'short-answer' || currentQuestion.type === 'long-answer') {
       return shortAnswerInput.trim().length > 0;
     }
     return answers[currentQuestion.id] !== undefined && 
@@ -444,7 +474,7 @@ export function QuizMode({ onComplete, quizParams, studentProfileId }: QuizModeP
           {/* Results Header */}
           <div className="bg-white dark:bg-gray-800 rounded-3xl shadow-xl p-8 mb-8 text-center">
             <Trophy className="w-20 h-20 text-yellow-500 mx-auto mb-4" />
-            <h2 className="text-4xl mb-2 dark:text-white">Quiz Complete!</h2>
+            <h2 className="text-4xl mb-2 dark:text-white">{mode === 'quiz' ? 'Quiz' : 'Worksheet'} Complete!</h2>
             <div className="text-6xl my-6 dark:text-white">{percentage}%</div>
             <p className="text-xl text-gray-600 dark:text-gray-300 mb-6">
               You got {correct} out of {quiz.totalQuestions} questions correct
@@ -465,7 +495,7 @@ export function QuizMode({ onComplete, quizParams, studentProfileId }: QuizModeP
                 className="flex items-center gap-2 px-6 py-3 bg-purple-500 text-white rounded-lg hover:bg-purple-600 transition-colors"
               >
                 <RotateCcw className="w-5 h-5" />
-                Retake Quiz
+                Retake {mode === 'quiz' ? 'Quiz' : 'Worksheet'}
               </button>
               <button
                 onClick={onComplete}
@@ -500,7 +530,7 @@ export function QuizMode({ onComplete, quizParams, studentProfileId }: QuizModeP
                         <span className="text-gray-500 dark:text-gray-400">Q{index + 1}.</span> {question.question || "Question text not available"}
                       </h4>
                       
-                      {question.type === 'short-answer' ? (
+                      {question.type === 'short-answer' || question.type === 'long-answer' ? (
                         <div className="space-y-2">
                           <div className="p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
                             <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">Your answer:</p>
@@ -614,6 +644,7 @@ export function QuizMode({ onComplete, quizParams, studentProfileId }: QuizModeP
               {currentQuestion.type === 'single-choice' && 'Single Choice'}
               {currentQuestion.type === 'multiple-choice' && 'Multiple Choice - Select all that apply'}
               {currentQuestion.type === 'short-answer' && 'Short Answer'}
+              {currentQuestion.type === 'long-answer' && 'Long Answer'}
             </div>
             <h3 className="text-2xl dark:text-white">
               {currentQuestion.question || "Question text not available"}
@@ -622,13 +653,13 @@ export function QuizMode({ onComplete, quizParams, studentProfileId }: QuizModeP
 
           {/* Answer Options */}
           <div className="space-y-3 mb-8">
-            {currentQuestion.type === 'short-answer' ? (
+            {currentQuestion.type === 'short-answer' || currentQuestion.type === 'long-answer' ? (
               <div>
                 <textarea
                   value={shortAnswerInput}
                   onChange={(e) => setShortAnswerInput(e.target.value)}
                   placeholder="Type your answer here..."
-                  rows={4}
+                  rows={currentQuestion.type === 'long-answer' ? 6 : 4}
                   className="w-full px-4 py-3 border-2 border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent resize-none dark:bg-gray-700 dark:text-white"
                 />
               </div>
