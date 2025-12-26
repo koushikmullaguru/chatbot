@@ -45,6 +45,23 @@ export interface QAResponse {
   suggested_questions?: string[];
 }
 
+export interface HomeworkAssistantRequest {
+  class_name: string;
+  subject: string;
+  topic: string;
+  assignment_type: string;
+  question?: string;
+}
+
+export interface HomeworkAssistantResponse {
+  id: string;
+  chat_session_id: string;
+  content: string;
+  sender_type: string;
+  timestamp: string;
+  suggested_questions?: string[];
+}
+
 // Chat API service
 export const chatService = {
   // Get all chat sessions for the current user
@@ -78,5 +95,10 @@ export const chatService = {
   // Q&A mode endpoint - get direct answer to a question
   askQuestion: async (qaData: QARequest): Promise<QAResponse> => {
     return apiService.post<QAResponse>('/llm/qa', qaData);
+  },
+
+  // Homework Assistant endpoint - get specialized help based on assignment type
+  homeworkAssistant: async (homeworkData: HomeworkAssistantRequest): Promise<HomeworkAssistantResponse> => {
+    return apiService.post<HomeworkAssistantResponse>('/llm/homework-assistant', homeworkData);
   }
 };

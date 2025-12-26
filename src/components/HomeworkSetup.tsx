@@ -1,11 +1,12 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { BookOpen, GraduationCap, Target, ArrowRight, Pencil } from 'lucide-react';
 import { AddToPlannerButton } from './AddToPlannerButton';
+import { academicService, Class, Subject, Chapter, Topic } from '../api/academicService';
 
-interface HomeworkTopic {
+export interface HomeworkTopic {
   class: string;
   subject: string;
-  topic: string;
+  chapter: string;
   assignmentType: string;
 }
 
@@ -31,307 +32,211 @@ interface HomeworkSetupProps {
 export function HomeworkSetup({ onStartHomework, onAddTask, isDark = false }: HomeworkSetupProps) {
   const [selectedClass, setSelectedClass] = useState('');
   const [selectedSubject, setSelectedSubject] = useState('');
-  const [selectedTopic, setSelectedTopic] = useState('');
+  const [selectedChapter, setSelectedChapter] = useState('');
   const [selectedAssignmentType, setSelectedAssignmentType] = useState('');
+  
+  // Data from backend
+  const [classes, setClasses] = useState<Class[]>([]);
+  const [subjects, setSubjects] = useState<Subject[]>([]);
+  const [chapters, setChapters] = useState<Chapter[]>([]);
+  const [topics, setTopics] = useState<Topic[]>([]);
+  
+  // Loading states
+  const [loadingClasses, setLoadingClasses] = useState(true);
+  const [loadingSubjects, setLoadingSubjects] = useState(false);
+  const [loadingChapters, setLoadingChapters] = useState(false);
+  const [loadingTopics, setLoadingTopics] = useState(false);
 
-  const classes = [
-    '6th Grade',
-    '7th Grade',
-    '8th Grade',
-    '9th Grade',
-    '10th Grade',
-    '11th Grade',
-    '12th Grade'
-  ];
+  // Fetch classes on component mount
+  useEffect(() => {
+    const fetchClasses = async () => {
+      try {
+        setLoadingClasses(true);
+        const classesData = await academicService.getClasses();
+        setClasses(classesData);
+      } catch (error) {
+        console.error('Error fetching classes:', error);
+        // Fallback to default classes if API fails
+        setClasses([
+          { id: '1', name: '6th Grade' },
+          { id: '2', name: '7th Grade' },
+          { id: '3', name: '8th Grade' },
+          { id: '4', name: '9th Grade' },
+          { id: '5', name: '10th Grade' },
+          { id: '6', name: '11th Grade' },
+          { id: '7', name: '12th Grade' }
+        ]);
+      } finally {
+        setLoadingClasses(false);
+      }
+    };
 
-  const subjectsByClass: Record<string, string[]> = {
-    '6th Grade': ['Mathematics', 'Science', 'English', 'Social Studies', 'Geography', 'Art'],
-    '7th Grade': ['Mathematics', 'Science', 'English', 'History', 'Geography', 'Computer'],
-    '8th Grade': ['Algebra', 'Biology', 'English', 'History', 'Civics', 'Physics'],
-    '9th Grade': ['Algebra', 'Biology', 'English', 'World History', 'Physics', 'Chemistry'],
-    '10th Grade': ['Geometry', 'Chemistry', 'English', 'World History', 'Physics', 'Biology'],
-    '11th Grade': ['Pre-Calculus', 'Chemistry', 'English Literature', 'US History', 'Physics', 'Economics'],
-    '12th Grade': ['Calculus', 'Advanced Physics', 'English Literature', 'Economics', 'Computer Science', 'Statistics']
-  };
+    fetchClasses();
+  }, []);
 
-  const topicsBySubject: Record<string, string[]> = {
-    'Mathematics': [
-      'Fractions and Decimals',
-      'Integers and Whole Numbers',
-      'Ratios and Proportions',
-      'Percentages',
-      'Basic Geometry',
-      'Area and Perimeter',
-      'Data Handling',
-      'Simple Equations',
-      'Algebraic Expressions',
-      'Word Problems',
-    ],
-    'Algebra': [
-      'Linear Equations',
-      'Quadratic Equations',
-      'Polynomials',
-      'Factorization',
-      'Functions and Graphs',
-      'Inequalities',
-      'Systems of Equations',
-      'Exponents and Radicals',
-      'Sequences and Series',
-      'Matrices',
-    ],
-    'Geometry': [
-      'Lines and Angles',
-      'Triangles',
-      'Quadrilaterals',
-      'Circles',
-      'Polygons',
-      'Coordinate Geometry',
-      'Transformations',
-      'Surface Area and Volume',
-      'Congruence and Similarity',
-      'Theorems and Proofs',
-    ],
-    'Calculus': [
-      'Limits and Continuity',
-      'Derivatives',
-      'Applications of Derivatives',
-      'Integrals',
-      'Applications of Integrals',
-      'Differential Equations',
-      'Sequences and Series',
-      'Vector Calculus',
-      'Optimization Problems',
-      'Related Rates',
-    ],
-    'Pre-Calculus': [
-      'Functions',
-      'Trigonometry',
-      'Complex Numbers',
-      'Vectors',
-      'Conic Sections',
-      'Exponential Functions',
-      'Logarithmic Functions',
-      'Polynomial Functions',
-      'Rational Functions',
-      'Parametric Equations',
-    ],
-    'Science': [
-      'Matter and Its Properties',
-      'Physical and Chemical Changes',
-      'Atoms and Molecules',
-      'Motion and Force',
-      'Energy',
-      'Light and Sound',
-      'Living Organisms',
-      'Plant and Animal Cells',
-      'Food and Nutrition',
-      'Weather and Climate',
-    ],
-    'Biology': [
-      'Cell Structure and Function',
-      'Genetics and Heredity',
-      'Evolution and Natural Selection',
-      'Ecology and Ecosystems',
-      'Human Body Systems',
-      'Plant Biology',
-      'Animal Behavior',
-      'Microorganisms',
-      'Reproduction',
-      'Biotechnology',
-    ],
-    'Chemistry': [
-      'Atomic Structure',
-      'Chemical Bonding',
-      'Periodic Table',
-      'Chemical Reactions',
-      'Acids, Bases and Salts',
-      'Metals and Non-Metals',
-      'Organic Chemistry',
-      'Carbon Compounds',
-      'Stoichiometry',
-      'Chemical Equilibrium',
-    ],
-    'Physics': [
-      'Motion and Laws of Motion',
-      'Force and Pressure',
-      'Work and Energy',
-      'Gravitation',
-      'Sound',
-      'Light and Reflection',
-      'Electricity',
-      'Magnetism',
-      'Current Electricity',
-      'Electromagnetic Induction',
-    ],
-    'Advanced Physics': [
-      'Mechanics',
-      'Thermodynamics',
-      'Electromagnetism',
-      'Optics',
-      'Modern Physics',
-      'Quantum Mechanics',
-      'Relativity',
-      'Nuclear Physics',
-      'Waves and Oscillations',
-      'Solid State Physics',
-    ],
-    'English': [
-      'Grammar - Parts of Speech',
-      'Grammar - Tenses',
-      'Grammar - Active and Passive Voice',
-      'Vocabulary Building',
-      'Reading Comprehension',
-      'Essay Writing',
-      'Letter Writing',
-      'Paragraph Writing',
-      'Poetry Analysis',
-      'Story Writing',
-    ],
-    'English Literature': [
-      'Poetry Analysis',
-      'Drama and Theatre',
-      'Novel Study',
-      'Short Stories',
-      'Literary Devices',
-      'Character Analysis',
-      'Theme Analysis',
-      'Critical Essays',
-      'Shakespeare Studies',
-      'Modern Literature',
-    ],
-    'History': [
-      'Ancient Civilizations',
-      'Medieval Period',
-      'Renaissance',
-      'Industrial Revolution',
-      'World War I',
-      'World War II',
-      'Cold War',
-      'Colonialism',
-      'Independence Movements',
-      'Modern History',
-    ],
-    'World History': [
-      'Ancient Mesopotamia',
-      'Ancient Egypt',
-      'Ancient Greece',
-      'Ancient Rome',
-      'Medieval Europe',
-      'Age of Exploration',
-      'American Revolution',
-      'French Revolution',
-      'World Wars',
-      'Contemporary World',
-    ],
-    'US History': [
-      'Colonial America',
-      'American Revolution',
-      'Constitution',
-      'Civil War',
-      'Reconstruction',
-      'Industrial Age',
-      'World War Era',
-      'Civil Rights Movement',
-      'Cold War',
-      'Modern America',
-    ],
-    'Social Studies': [
-      'Geography and Maps',
-      'Communities',
-      'Government',
-      'Economics Basics',
-      'Culture and Society',
-      'Historical Events',
-      'Citizenship',
-      'Natural Resources',
-      'Transportation',
-      'Communication',
-    ],
-    'Geography': [
-      'Maps and Globes',
-      'Continents and Oceans',
-      'Climate Zones',
-      'Natural Resources',
-      'Population Geography',
-      'Physical Geography',
-      'Human Geography',
-      'Environmental Issues',
-      'Agriculture',
-      'Urbanization',
-    ],
-    'Civics': [
-      'Constitution',
-      'Fundamental Rights',
-      'Fundamental Duties',
-      'Democracy',
-      'Elections',
-      'Government Structure',
-      'Judiciary',
-      'Local Government',
-      'Secularism',
-      'Social Justice',
-    ],
-    'Computer': [
-      'Computer Basics',
-      'Operating Systems',
-      'MS Office',
-      'Internet and Email',
-      'Programming Basics',
-      'HTML and Web Design',
-      'Algorithms',
-      'Data Representation',
-      'Computer Networks',
-      'Cybersecurity',
-    ],
-    'Computer Science': [
-      'Programming Fundamentals',
-      'Data Structures',
-      'Algorithms',
-      'Object-Oriented Programming',
-      'Database Management',
-      'Web Development',
-      'Software Engineering',
-      'Computer Networks',
-      'Artificial Intelligence',
-      'Machine Learning',
-    ],
-    'Economics': [
-      'Microeconomics',
-      'Macroeconomics',
-      'Demand and Supply',
-      'Market Structures',
-      'National Income',
-      'Money and Banking',
-      'International Trade',
-      'Public Finance',
-      'Economic Development',
-      'Indian Economy',
-    ],
-    'Art': [
-      'Drawing Basics',
-      'Color Theory',
-      'Painting Techniques',
-      'Sculpture',
-      'Art History',
-      'Perspective Drawing',
-      'Still Life',
-      'Portraits',
-      'Landscape Art',
-      'Digital Art',
-    ],
-    'Statistics': [
-      'Data Collection',
-      'Data Presentation',
-      'Measures of Central Tendency',
-      'Measures of Dispersion',
-      'Probability',
-      'Distributions',
-      'Hypothesis Testing',
-      'Correlation and Regression',
-      'Sampling',
-      'Statistical Inference',
-    ],
-  };
+  // Fetch subjects when a class is selected
+  useEffect(() => {
+    const fetchSubjects = async () => {
+      if (!selectedClass) {
+        setSubjects([]);
+        return;
+      }
+
+      try {
+        setLoadingSubjects(true);
+        const subjectsData = await academicService.getSubjects(selectedClass);
+        setSubjects(subjectsData);
+      } catch (error) {
+        console.error('Error fetching subjects:', error);
+        // Fallback to default subjects if API fails
+        const classSubjects: Record<string, Subject[]> = {
+          '1': [
+            { id: '1', name: 'Mathematics', class_id: '1' },
+            { id: '2', name: 'Science', class_id: '1' },
+            { id: '3', name: 'English', class_id: '1' },
+            { id: '4', name: 'Social Studies', class_id: '1' },
+            { id: '5', name: 'Geography', class_id: '1' },
+            { id: '6', name: 'Art', class_id: '1' }
+          ],
+          '2': [
+            { id: '7', name: 'Mathematics', class_id: '2' },
+            { id: '8', name: 'Science', class_id: '2' },
+            { id: '9', name: 'English', class_id: '2' },
+            { id: '10', name: 'History', class_id: '2' },
+            { id: '11', name: 'Geography', class_id: '2' },
+            { id: '12', name: 'Computer', class_id: '2' }
+          ],
+          '3': [
+            { id: '13', name: 'Algebra', class_id: '3' },
+            { id: '14', name: 'Biology', class_id: '3' },
+            { id: '15', name: 'English', class_id: '3' },
+            { id: '16', name: 'History', class_id: '3' },
+            { id: '17', name: 'Civics', class_id: '3' },
+            { id: '18', name: 'Physics', class_id: '3' }
+          ],
+          '4': [
+            { id: '19', name: 'Algebra', class_id: '4' },
+            { id: '20', name: 'Biology', class_id: '4' },
+            { id: '21', name: 'English', class_id: '4' },
+            { id: '22', name: 'World History', class_id: '4' },
+            { id: '23', name: 'Physics', class_id: '4' },
+            { id: '24', name: 'Chemistry', class_id: '4' }
+          ],
+          '5': [
+            { id: '25', name: 'Geometry', class_id: '5' },
+            { id: '26', name: 'Chemistry', class_id: '5' },
+            { id: '27', name: 'English', class_id: '5' },
+            { id: '28', name: 'World History', class_id: '5' },
+            { id: '29', name: 'Physics', class_id: '5' },
+            { id: '30', name: 'Biology', class_id: '5' }
+          ],
+          '6': [
+            { id: '31', name: 'Pre-Calculus', class_id: '6' },
+            { id: '32', name: 'Chemistry', class_id: '6' },
+            { id: '33', name: 'English Literature', class_id: '6' },
+            { id: '34', name: 'US History', class_id: '6' },
+            { id: '35', name: 'Physics', class_id: '6' },
+            { id: '36', name: 'Economics', class_id: '6' }
+          ],
+          '7': [
+            { id: '37', name: 'Calculus', class_id: '7' },
+            { id: '38', name: 'Advanced Physics', class_id: '7' },
+            { id: '39', name: 'English Literature', class_id: '7' },
+            { id: '40', name: 'Economics', class_id: '7' },
+            { id: '41', name: 'Computer Science', class_id: '7' },
+            { id: '42', name: 'Statistics', class_id: '7' }
+          ]
+        };
+        setSubjects(classSubjects[selectedClass] || []);
+      } finally {
+        setLoadingSubjects(false);
+      }
+    };
+
+    fetchSubjects();
+  }, [selectedClass]);
+
+  // Fetch chapters when a subject is selected
+  useEffect(() => {
+    const fetchChapters = async () => {
+      if (!selectedSubject) {
+        setChapters([]);
+        return;
+      }
+
+      try {
+        setLoadingChapters(true);
+        const chaptersData = await academicService.getChapters(selectedSubject);
+        setChapters(chaptersData);
+      } catch (error) {
+        console.error('Error fetching chapters:', error);
+        // Fallback to default chapters if API fails
+        const subjectChapters: Record<string, Chapter[]> = {
+          '1': [ // Mathematics
+            { id: '1', name: 'Number System', subject_id: '1' },
+            { id: '2', name: 'Algebra', subject_id: '1' },
+            { id: '3', name: 'Geometry', subject_id: '1' },
+            { id: '4', name: 'Mensuration', subject_id: '1' },
+            { id: '5', name: 'Data Handling', subject_id: '1' }
+          ],
+          '2': [ // Science
+            { id: '6', name: 'Matter in Our Surroundings', subject_id: '2' },
+            { id: '7', name: 'Is Matter Around Us Pure', subject_id: '2' },
+            { id: '8', name: 'Atoms and Molecules', subject_id: '2' },
+            { id: '9', name: 'Structure of the Atom', subject_id: '2' },
+            { id: '10', name: 'The Fundamental Unit of Life', subject_id: '2' }
+          ]
+          // Add more subjects as needed
+        };
+        setChapters(subjectChapters[selectedSubject] || []);
+      } finally {
+        setLoadingChapters(false);
+      }
+    };
+
+    fetchChapters();
+  }, [selectedSubject]);
+
+  // Fetch topics when a chapter is selected
+  useEffect(() => {
+    const fetchTopics = async () => {
+      if (!selectedChapter) {
+        setTopics([]);
+        return;
+      }
+
+      try {
+        setLoadingTopics(true);
+        const topicsData = await academicService.getTopics(undefined, selectedChapter);
+        setTopics(topicsData);
+      } catch (error) {
+        console.error('Error fetching topics:', error);
+        // Fallback to default topics if API fails
+        const chapterTopics: Record<string, Topic[]> = {
+          '1': [ // Number System
+            { id: '1', name: 'Natural Numbers', chapter_id: '1' },
+            { id: '2', name: 'Whole Numbers', chapter_id: '1' },
+            { id: '3', name: 'Integers', chapter_id: '1' },
+            { id: '4', name: 'Fractions', chapter_id: '1' },
+            { id: '5', name: 'Decimals', chapter_id: '1' }
+          ],
+          '2': [ // Algebra
+            { id: '6', name: 'Variables and Constants', chapter_id: '2' },
+            { id: '7', name: 'Algebraic Expressions', chapter_id: '2' },
+            { id: '8', name: 'Linear Equations', chapter_id: '2' },
+            { id: '9', name: 'Word Problems', chapter_id: '2' },
+            { id: '10', name: 'Applications', chapter_id: '2' }
+          ]
+          // Add more chapters as needed
+        };
+        setTopics(chapterTopics[selectedChapter] || []);
+      } finally {
+        setLoadingTopics(false);
+      }
+    };
+
+    fetchTopics();
+  }, [selectedChapter]);
 
   const assignmentTypes = [
     { id: 'problem-solving', name: 'Problem Solving', icon: '🧮', description: 'Math problems, equations, calculations' },
@@ -342,15 +247,21 @@ export function HomeworkSetup({ onStartHomework, onAddTask, isDark = false }: Ho
     { id: 'lab', name: 'Lab Report', icon: '🧪', description: 'Science experiments, lab work' },
   ];
 
-  const subjects = selectedClass ? (subjectsByClass[selectedClass] || []) : [];
-  const topics = selectedSubject ? (topicsBySubject[selectedSubject] || []) : [];
+  // Get the selected class name
+  const selectedClassName = classes.find(cls => cls.id === selectedClass)?.name || '';
+  
+  // Get the selected subject name
+  const selectedSubjectName = subjects.find(subj => subj.id === selectedSubject)?.name || '';
+  
+  // Get the selected chapter name
+  const selectedChapterName = chapters.find(chap => chap.id === selectedChapter)?.name || '';
 
   const handleStart = () => {
-    if (selectedClass && selectedSubject && selectedTopic && selectedAssignmentType) {
+    if (selectedClass && selectedSubject && selectedChapter && selectedAssignmentType) {
       onStartHomework({
-        class: selectedClass,
-        subject: selectedSubject,
-        topic: selectedTopic,
+        class: selectedClassName,
+        subject: selectedSubjectName,
+        chapter: selectedChapterName,
         assignmentType: selectedAssignmentType,
       });
     }
@@ -382,24 +293,28 @@ export function HomeworkSetup({ onStartHomework, onAddTask, isDark = false }: Ho
               </div>
             </div>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              {classes.map((cls) => (
-                <button
-                  key={cls}
-                  onClick={() => {
-                    setSelectedClass(cls);
-                    setSelectedSubject('');
-                    setSelectedTopic('');
-                    setSelectedAssignmentType('');
-                  }}
-                  className={`p-4 rounded-xl border-2 transition-all ${
-                    selectedClass === cls
-                      ? 'border-pink-500 bg-pink-50 dark:bg-pink-900/20'
-                      : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700/50'
-                  }`}
-                >
-                  <div className="text-sm dark:text-white">{cls}</div>
-                </button>
-              ))}
+              {loadingClasses ? (
+                <div className="col-span-full text-center py-4">Loading classes...</div>
+              ) : (
+                classes.map((cls) => (
+                  <button
+                    key={cls.id}
+                    onClick={() => {
+                      setSelectedClass(cls.id);
+                      setSelectedSubject('');
+                      setSelectedChapter('');
+                      setSelectedAssignmentType('');
+                    }}
+                    className={`p-4 rounded-xl border-2 transition-all ${
+                      selectedClass === cls.id
+                        ? 'border-pink-500 bg-pink-50 dark:bg-pink-900/20'
+                        : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700/50'
+                    }`}
+                  >
+                    <div className="text-sm dark:text-white">{cls.name}</div>
+                  </button>
+                ))
+              )}
             </div>
           </div>
 
@@ -416,28 +331,32 @@ export function HomeworkSetup({ onStartHomework, onAddTask, isDark = false }: Ho
                 </div>
               </div>
               <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                {subjects.map((subject) => (
-                  <button
-                    key={subject}
-                    onClick={() => {
-                      setSelectedSubject(subject);
-                      setSelectedTopic('');
-                      setSelectedAssignmentType('');
-                    }}
-                    className={`p-4 rounded-xl border-2 transition-all ${
-                      selectedSubject === subject
-                        ? 'border-rose-500 bg-rose-50 dark:bg-rose-900/20'
-                        : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700/50'
-                    }`}
-                  >
-                    <span className="dark:text-white">{subject}</span>
-                  </button>
-                ))}
+                {loadingSubjects ? (
+                  <div className="col-span-full text-center py-4">Loading subjects...</div>
+                ) : (
+                  subjects.map((subject) => (
+                    <button
+                      key={subject.id}
+                      onClick={() => {
+                        setSelectedSubject(subject.id);
+                        setSelectedChapter('');
+                        setSelectedAssignmentType('');
+                      }}
+                      className={`p-4 rounded-xl border-2 transition-all ${
+                        selectedSubject === subject.id
+                          ? 'border-rose-500 bg-rose-50 dark:bg-rose-900/20'
+                          : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700/50'
+                      }`}
+                    >
+                      <span className="dark:text-white">{subject.name}</span>
+                    </button>
+                  ))
+                )}
               </div>
             </div>
           )}
 
-          {/* Step 3: Select Topic */}
+          {/* Step 3: Select Chapter */}
           {selectedSubject && (
             <div className="animate-fadeIn">
               <div className="flex items-center gap-3 mb-4">
@@ -445,33 +364,37 @@ export function HomeworkSetup({ onStartHomework, onAddTask, isDark = false }: Ho
                   <Target className="w-6 h-6 text-purple-600 dark:text-purple-400" />
                 </div>
                 <div>
-                  <h3 className="text-xl dark:text-white">Step 3: Select Topic</h3>
-                  <p className="text-sm text-gray-500 dark:text-gray-400">What topic is your homework about?</p>
+                  <h3 className="text-xl dark:text-white">Step 3: Select Chapter</h3>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">What chapter is your homework about?</p>
                 </div>
               </div>
               <div className="grid md:grid-cols-2 gap-3">
-                {topics.map((topic) => (
-                  <button
-                    key={topic}
-                    onClick={() => {
-                      setSelectedTopic(topic);
-                      setSelectedAssignmentType('');
-                    }}
-                    className={`p-3 rounded-xl border-2 transition-all text-left ${
-                      selectedTopic === topic
-                        ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/20'
-                        : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700/50'
-                    }`}
-                  >
-                    <div className="text-sm dark:text-white">{topic}</div>
-                  </button>
-                ))}
+                {loadingChapters ? (
+                  <div className="col-span-full text-center py-4">Loading chapters...</div>
+                ) : (
+                  chapters.map((chapter) => (
+                    <button
+                      key={chapter.id}
+                      onClick={() => {
+                        setSelectedChapter(chapter.id);
+                        setSelectedAssignmentType('');
+                      }}
+                      className={`p-3 rounded-xl border-2 transition-all text-left ${
+                        selectedChapter === chapter.id
+                          ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/20'
+                          : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700/50'
+                      }`}
+                    >
+                      <div className="text-sm dark:text-white">{chapter.name}</div>
+                    </button>
+                  ))
+                )}
               </div>
             </div>
           )}
 
           {/* Step 4: Select Assignment Type */}
-          {selectedTopic && (
+          {selectedChapter && (
             <div className="animate-fadeIn">
               <div className="flex items-center gap-3 mb-4">
                 <div className="w-10 h-10 bg-orange-100 dark:bg-orange-900/30 rounded-lg flex items-center justify-center">
@@ -510,15 +433,15 @@ export function HomeworkSetup({ onStartHomework, onAddTask, isDark = false }: Ho
                 <div className="grid md:grid-cols-2 gap-3 mb-4 text-sm">
                   <div className="flex items-center gap-2">
                     <span className="text-gray-600 dark:text-gray-400">Class:</span>
-                    <span className="dark:text-white">{selectedClass}</span>
+                    <span className="dark:text-white">{selectedClassName}</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <span className="text-gray-600 dark:text-gray-400">Subject:</span>
-                    <span className="dark:text-white">{selectedSubject}</span>
+                    <span className="dark:text-white">{selectedSubjectName}</span>
                   </div>
                   <div className="flex items-center gap-2">
-                    <span className="text-gray-600 dark:text-gray-400">Topic:</span>
-                    <span className="dark:text-white">{selectedTopic}</span>
+                    <span className="text-gray-600 dark:text-gray-400">Chapter:</span>
+                    <span className="dark:text-white">{selectedChapterName}</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <span className="text-gray-600 dark:text-gray-400">Type:</span>
@@ -535,8 +458,8 @@ export function HomeworkSetup({ onStartHomework, onAddTask, isDark = false }: Ho
                 {onAddTask && (
                   <div className="mt-4">
                     <AddToPlannerButton
-                      subject={selectedSubject}
-                      topic={selectedTopic}
+                      subject={selectedSubjectName}
+                      topic={selectedChapterName}
                       onAddTask={(task) => {
                         onAddTask(task);
                         alert('Task added to your planner! View it by clicking the Planner button in the header.');

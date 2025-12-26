@@ -25,14 +25,12 @@ def create_worksheet(
     """
     Create a new worksheet assessment.
     """
-    # Only teachers can create assessments
     if current_user.user_type != "teacher":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only teachers can create assessments"
         )
-    
-    # Create assessment
+
     assessment = Assessment(
         title=assessment_data.title,
         type="worksheet",  # Explicitly set to worksheet
@@ -259,8 +257,6 @@ def start_quiz(
             detail="Only students or parents can start quizzes"
         )
     
-    # TODO: Create an assessment result record
-    # For now, just return a success message
     return {
         "message": "Quiz started successfully",
         "assessment_id": id,
@@ -271,7 +267,7 @@ def start_quiz(
 @router.post("/submit-quiz/{id}", response_model=AssessmentResultResponse)
 def submit_quiz(
     id: str,
-    answers_data: dict,  # Changed to accept a dict with answers array
+    answers_data: dict,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ) -> Any:
@@ -280,8 +276,7 @@ def submit_quiz(
     """
     try:
         print(f"Submitting quiz {id} with answers data: {answers_data}")
-        
-        # Extract answers from the request data
+
         answers = answers_data.get("answers", [])
         if not answers:
             raise HTTPException(
@@ -290,8 +285,7 @@ def submit_quiz(
             )
         
         print(f"Submitting quiz {id} with {len(answers)} answers")
-        
-        # Get assessment
+
         from uuid import UUID
         try:
             assessment_uuid = UUID(id)
@@ -317,13 +311,10 @@ def submit_quiz(
                 detail="Only students or parents can submit quizzes"
             )
         
-        # Get student profile for the current user
-        # For students, we use their own student profile
-        # For parents, we need to find the student profile based on the user_id in the answers
         student_profile = None
         
         if current_user.user_type == "student":
-            # Students can only submit for their own profile
+
             student_profile = db.query(StudentProfile).filter(
                 StudentProfile.user_id == current_user.id
             ).first()
@@ -335,11 +326,9 @@ def submit_quiz(
                     detail="Student profile not found for current user"
                 )
         elif current_user.user_type == "parent":
-            # Parents can submit for their linked students
-            # Get the user_id from the first answer
             user_id = None
             for answer in answers:
-                current_user_id = answer.get("student_profile_id")  # This is actually the user_id
+                current_user_id = answer.get("student_profile_id")
                 if not current_user_id:
                     raise HTTPException(
                         status_code=status.HTTP_400_BAD_REQUEST,
@@ -361,8 +350,7 @@ def submit_quiz(
                 )
             
             print(f"User ID from answers: {user_id}")
-            
-            # Convert string UUID to UUID object if needed
+
             from uuid import UUID
             try:
                 user_uuid = UUID(user_id)
@@ -371,8 +359,6 @@ def submit_quiz(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="Invalid user ID format"
                 )
-            
-            # Check if this user is a student linked to the current parent
             from ...models.user_management import ParentStudentRelation
             is_linked = db.query(ParentStudentRelation).filter(
                 ParentStudentRelation.parent_id == current_user.id,
@@ -384,8 +370,7 @@ def submit_quiz(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="You can only submit quizzes for your linked students"
                 )
-            
-            # Get the student profile for this user
+
             student_profile = db.query(StudentProfile).filter(
                 StudentProfile.user_id == user_uuid
             ).first()
@@ -400,10 +385,6 @@ def submit_quiz(
         print(f"Found student profile: {student_profile.name}")
         
         print(f"Found student profile: {student_profile.name}")
-        
-        # Access control has already been checked above when retrieving the student profile
-        
-        # Check if there's already a result for this student and assessment
         existing_result = db.query(AssessmentResult).filter(
             AssessmentResult.assessment_id == assessment_uuid,
             AssessmentResult.student_profile_id == student_profile.id
@@ -411,24 +392,21 @@ def submit_quiz(
         
         if existing_result:
             print(f"Updating existing assessment result: {existing_result.id}")
-            # Update existing result instead of creating a new one
             assessment_result = existing_result
-            assessment_result.total_score = 0  # Will be recalculated
-            assessment_result.percentage = 0  # Will be recalculated
+            assessment_result.total_score = 0
+            assessment_result.percentage = 0
             assessment_result.completed_at = datetime.utcnow()
             
-            # Delete existing student answers
             db.query(StudentAnswer).filter(
                 StudentAnswer.assessment_result_id == assessment_result.id
             ).delete()
         else:
             print("Creating new assessment result")
-            # Create new assessment result
             assessment_result = AssessmentResult(
                 assessment_id=assessment_uuid,
                 student_profile_id=student_profile.id,
-                total_score=0,  # Will be calculated
-                percentage=0,  # Will be calculated
+                total_score=0,
+                percentage=0,
                 completed_at=datetime.utcnow()
             )
             db.add(assessment_result)
@@ -436,22 +414,18 @@ def submit_quiz(
         db.commit()
         db.refresh(assessment_result)
         print(f"Assessment result created/updated: {assessment_result.id}")
-        
-        # Process answers
+
         total_score = 0
         total_possible = 0
         
         for i, answer_data in enumerate(answers):
             print(f"Processing answer {i+1}/{len(answers)}")
             print(f"Answer data: {answer_data}")
-            
-            # Get question
+
             question_id = answer_data.get("question_id")
             if not question_id:
                 print(f"Question ID not found in answer data: {answer_data}")
                 continue
-            
-            # Convert string UUID to UUID object if needed
             from uuid import UUID
             try:
                 question_uuid = UUID(question_id)
@@ -464,14 +438,12 @@ def submit_quiz(
                 print(f"Question not found: {question_id}")
                 continue
             
-            # Verify question belongs to this assessment
             if str(question.assessment_id) != id:
                 print(f"Question {question.id} does not belong to assessment {assessment.id}")
                 continue
             
             total_possible += question.marks
-            
-            # Get the answer text
+
             answer_text = answer_data.get("answer", "")
             
             # Create student answer
@@ -479,13 +451,11 @@ def submit_quiz(
                 assessment_result_id=assessment_result.id,
                 question_id=question_uuid,
                 answer=answer_text,
-                score=0  # Will be calculated
+                score=0
             )
-            
-            # Grade the answer
+
             try:
                 if question.type == QuestionType.MULTIPLE_CHOICE:
-                    # For multiple choice, check if the answer matches the correct answer
                     if answer_text.strip().lower() == question.correct_answer.strip().lower():
                         student_answer.score = question.marks
                         total_score += question.marks
@@ -494,7 +464,6 @@ def submit_quiz(
                         student_answer.score = 0
                         print(f"Incorrect answer for question {question.id}, score: {student_answer.score}")
                 elif question.type == QuestionType.TRUE_FALSE:
-                    # For true/false, check if the answer matches the correct answer
                     if answer_text.strip().lower() == question.correct_answer.strip().lower():
                         student_answer.score = question.marks
                         total_score += question.marks
@@ -503,8 +472,6 @@ def submit_quiz(
                         student_answer.score = 0
                         print(f"Incorrect answer for question {question.id}, score: {student_answer.score}")
                 else:
-                    # For short answer and essay, we'll need manual grading or AI grading
-                    # For now, give partial credit (50%)
                     student_answer.score = question.marks * 0.5
                     total_score += student_answer.score
                     print(f"Partial credit for question {question.id}, score: {student_answer.score}")
@@ -514,8 +481,7 @@ def submit_quiz(
             except Exception as e:
                 print(f"Error grading answer for question {question.id}: {str(e)}")
                 raise e
-        
-        # Calculate percentage
+
         if total_possible > 0:
             assessment_result.percentage = (total_score / total_possible) * 100
         else:
@@ -545,7 +511,7 @@ def submit_quiz(
 @router.post("/submit-worksheet/{id}", response_model=AssessmentResultResponse)
 def submit_worksheet(
     id: str,
-    answers_data: dict,  # Changed to accept a dict with answers array
+    answers_data: dict,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ) -> Any:
@@ -565,7 +531,6 @@ def get_quiz_result(
     """
     Fetch detailed quiz result.
     """
-    # Get assessment result
     assessment_result = db.query(AssessmentResult).filter(
         AssessmentResult.id == id
     ).first()
@@ -575,10 +540,8 @@ def get_quiz_result(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Quiz result not found"
         )
-    
-    # Check if user has access to this result
+
     if current_user.user_type == "student":
-        # Students can only view their own results
         student_profile = db.query(StudentProfile).filter(
             StudentProfile.user_id == current_user.id
         ).first()
@@ -589,7 +552,6 @@ def get_quiz_result(
                 detail="You can only view your own quiz results"
             )
     elif current_user.user_type == "parent":
-        # Parents can only view results of their linked students
         is_linked = db.query(ParentStudentRelation).filter(
             ParentStudentRelation.parent_id == current_user.id,
             ParentStudentRelation.student_profile_id == assessment_result.student_profile_id
@@ -601,7 +563,6 @@ def get_quiz_result(
                 detail="You can only view quiz results of your linked students"
             )
     elif current_user.user_type == "teacher":
-        # Teachers can only view results of assessments they created
         assessment = db.query(Assessment).filter(
             Assessment.id == assessment_result.assessment_id
         ).first()
@@ -624,7 +585,6 @@ def get_student_quiz_results(
     List all results for a student.
     """
     if current_user.user_type == "student":
-        # Get student profile
         student_profile = db.query(StudentProfile).filter(
             StudentProfile.user_id == current_user.id
         ).first()
@@ -634,15 +594,13 @@ def get_student_quiz_results(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Student profile not found"
             )
-        
-        # Get all results for this student
+
         results = db.query(AssessmentResult).filter(
             AssessmentResult.student_profile_id == student_profile.id
         ).all()
         
         return results
     elif current_user.user_type == "parent":
-        # Get all student profiles linked to this parent
         student_profiles = (
             db.query(StudentProfile)
             .join(ParentStudentRelation)
@@ -652,8 +610,7 @@ def get_student_quiz_results(
         
         if not student_profiles:
             return []
-        
-        # Get all results for these students
+
         student_profile_ids = [sp.id for sp in student_profiles]
         results = db.query(AssessmentResult).filter(
             AssessmentResult.student_profile_id.in_(student_profile_ids)

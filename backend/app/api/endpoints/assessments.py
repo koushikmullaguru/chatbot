@@ -108,6 +108,4 @@ async def submit_worksheet_answers(
     """
     Submit worksheet answers and get results.
     """
-    # This is essentially the same as submitting a quiz
-    # We can reuse the same logic
     return await submit_quiz_answers(assessment_id, submission, current_user, db)

@@ -94,6 +94,6 @@ export interface ExamConfig {
 export interface HomeworkTopic {
   class: string;
   subject: string;
-  topic: string;
+  chapter: string;
   assignmentType: string;
 }

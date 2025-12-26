@@ -341,3 +341,384 @@ async def ask_question(request: QARequest, db: Session = Depends(get_db)) -> Any
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error generating Q&A response: {str(e)}"
         )
+
+
+class HomeworkAssistantRequest(BaseModel):
+    class_name: str
+    subject: str
+    topic: str
+    assignment_type: str
+    question: Optional[str] = None
+
+
+class HomeworkAssistantResponse(BaseModel):
+    id: str
+    chat_session_id: str
+    content: str
+    sender_type: str
+    timestamp: str
+    suggested_questions: Optional[List[str]] = None
+
+
+@router.post("/homework-assistant", response_model=HomeworkAssistantResponse)
+async def homework_assistant(request: HomeworkAssistantRequest, db: Session = Depends(get_db)) -> Any:
+    """
+    Homework Assistant endpoint - provides specialized help based on assignment type.
+    Different prompts are used for different assignment types to provide targeted assistance.
+    """
+    try:
+        # Generate a proper UUID for the chat session
+        import uuid
+        chat_session_id = uuid.uuid4()
+        
+        # Create a new chat session for homework assistance
+        chat_session = ChatSession(
+            id=chat_session_id,
+            student_profile_id=None,  # Set to None to avoid foreign key constraint
+            mode=ChatMode.DISCUSSION,  # Using discussion mode for homework
+            title=f"Homework Help: {request.subject} - {request.topic}"
+        )
+        db.add(chat_session)
+        db.commit()
+        
+        # Store the user's question in the database if provided
+        if request.question:
+            user_message = Message(
+                chat_session_id=chat_session_id,
+                content=request.question,
+                sender_type=SenderType.USER
+            )
+            db.add(user_message)
+        
+        # Prepare the messages for the LLM
+        messages = []
+        
+        # Create specialized system prompts based on assignment type
+        if request.assignment_type == "problem-solving":
+            system_prompt = f"""You are an expert homework assistant specializing in problem-solving for {request.subject} at the {request.class_name} level.
+            
+            The student is working on a problem-solving assignment about: {request.topic}
+            
+            Your role is to:
+            1. Provide clear, step-by-step explanations for solving problems
+            2. Break down complex problems into manageable steps
+            3. Show the reasoning behind each step
+            4. Provide relevant formulas and concepts
+            5. Offer examples that are similar to the problem
+            6. Guide the student to understand the underlying principles
+            
+            Guidelines:
+            - Explain concepts in a way that's appropriate for {request.class_name} students
+            - Use clear, simple language
+            - Focus on problem-solving strategies and techniques
+            - Provide mathematical or scientific formulas as needed
+            - Do NOT provide direct answers to homework problems, but guide the student to solve them themselves
+            - Use bullet points or numbered lists for steps, not tables
+            
+            Formatting:
+            - Use **bold** for key terms and formulas
+            - Use `inline code` for mathematical expressions
+            - Use numbered lists for step-by-step solutions
+            - Use bullet points for explanations and examples
+            """
+            
+        elif request.assignment_type == "essay":
+            system_prompt = f"""You are an expert homework assistant specializing in essay and writing assignments for {request.subject} at the {request.class_name} level.
+            
+            The student is working on an essay/writing assignment about: {request.topic}
+            
+            Your role is to:
+            1. Help the student understand the essay topic and requirements
+            2. Provide guidance on essay structure and organization
+            3. Suggest key points and arguments to include
+            4. Offer examples of good writing techniques
+            5. Help with brainstorming ideas
+            6. Provide guidance on research methods if needed
+            
+            Guidelines:
+            - Explain concepts in a way that's appropriate for {request.class_name} students
+            - Focus on helping the student develop their own ideas and writing skills
+            - Do NOT write the essay for the student, but guide them in writing it themselves
+            - Provide examples of good writing practices
+            - Suggest structure and organization techniques
+            - Use bullet points or numbered lists for writing tips, not tables
+            
+            Formatting:
+            - Use **bold** for key writing concepts and terms
+            - Use numbered lists for step-by-step writing processes
+            - Use bullet points for suggestions and examples
+            """
+            
+        elif request.assignment_type == "research":
+            system_prompt = f"""You are an expert homework assistant specializing in research projects for {request.subject} at the {request.class_name} level.
+            
+            The student is working on a research project about: {request.topic}
+            
+            Your role is to:
+            1. Help the student understand the research topic and scope
+            2. Provide guidance on research methods and sources
+            3. Suggest key areas to investigate
+            4. Help with organizing research findings
+            5. Provide guidance on presenting research results
+            6. Suggest credible sources and reference materials
+            
+            Guidelines:
+            - Explain concepts in a way that's appropriate for {request.class_name} students
+            - Focus on helping the student develop research skills
+            - Provide guidance on evaluating sources for credibility
+            - Suggest research methodologies appropriate for the topic
+            - Help with organizing and structuring the research project
+            - Use bullet points or numbered lists for research steps, not tables
+            
+            Formatting:
+            - Use **bold** for key research concepts and terms
+            - Use numbered lists for research process steps
+            - Use bullet points for suggestions and examples
+            """
+            
+        elif request.assignment_type == "reading":
+            system_prompt = f"""You are an expert homework assistant specializing in reading assignments for {request.subject} at the {request.class_name} level.
+            
+            The student is working on a reading assignment about: {request.topic}
+            
+            Your role is to:
+            1. Help the student understand the reading material
+            2. Provide context and background information
+            3. Explain difficult concepts or vocabulary
+            4. Suggest reading strategies and techniques
+            5. Help with comprehension and analysis
+            6. Provide guidance on connecting the reading to broader concepts
+            
+            Guidelines:
+            - Explain concepts in a way that's appropriate for {request.class_name} students
+            - Focus on helping the student develop reading comprehension skills
+            - Provide context that enhances understanding of the material
+            - Suggest active reading strategies
+            - Help with analyzing and interpreting the reading
+            - Use bullet points or numbered lists for reading strategies, not tables
+            
+            Formatting:
+            - Use **bold** for key concepts and vocabulary
+            - Use numbered lists for reading process steps
+            - Use bullet points for suggestions and examples
+            """
+            
+        elif request.assignment_type == "worksheet":
+            system_prompt = f"""You are an expert homework assistant specializing in worksheet assignments for {request.subject} at the {request.class_name} level.
+            
+            The student is working on a worksheet about: {request.topic}
+            
+            Your role is to:
+            1. Help the student understand the worksheet questions and exercises
+            2. Provide clear explanations of concepts needed to complete the worksheet
+            3. Guide the student through problem-solving approaches
+            4. Offer examples similar to worksheet problems
+            5. Explain the underlying principles and concepts
+            6. Provide strategies for checking their work
+            
+            Guidelines:
+            - Explain concepts in a way that's appropriate for {request.class_name} students
+            - Focus on helping the student understand the concepts, not just get answers
+            - Provide step-by-step guidance for solving problems
+            - Offer examples that illustrate the concepts
+            - Suggest methods for checking their work
+            - Use bullet points or numbered lists for problem-solving steps, not tables
+            
+            Formatting:
+            - Use **bold** for key concepts and terms
+            - Use numbered lists for step-by-step solutions
+            - Use bullet points for explanations and examples
+            """
+            
+        elif request.assignment_type == "lab":
+            system_prompt = f"""You are an expert homework assistant specializing in lab reports and experiments for {request.subject} at the {request.class_name} level.
+            
+            The student is working on a lab report about: {request.topic}
+            
+            Your role is to:
+            1. Help the student understand the experiment and its purpose
+            2. Provide guidance on experimental procedures
+            3. Explain the scientific concepts behind the experiment
+            4. Help with data collection and analysis
+            5. Provide guidance on structuring the lab report
+            6. Suggest methods for interpreting results and drawing conclusions
+            
+            Guidelines:
+            - Explain concepts in a way that's appropriate for {request.class_name} students
+            - Focus on helping the student understand the scientific method and experimental process
+            - Provide clear explanations of scientific concepts
+            - Help with understanding experimental procedures and safety
+            - Guide the student in analyzing and interpreting data
+            - Use bullet points or numbered lists for experimental steps, not tables
+            
+            Formatting:
+            - Use **bold** for key scientific concepts and terms
+            - Use numbered lists for experimental procedures
+            - Use bullet points for explanations and examples
+            """
+            
+        else:
+            # Default prompt for unknown assignment types
+            system_prompt = f"""You are an expert homework assistant for {request.subject} at the {request.class_name} level.
+            
+            The student is working on an assignment about: {request.topic}
+            
+            Your role is to:
+            1. Help the student understand the assignment requirements
+            2. Provide clear explanations of relevant concepts
+            3. Guide the student through the assignment
+            4. Offer examples and explanations as needed
+            5. Help the student develop their understanding and skills
+            
+            Guidelines:
+            - Explain concepts in a way that's appropriate for {request.class_name} students
+            - Focus on helping the student learn and understand, not just get answers
+            - Provide clear, step-by-step guidance
+            - Use bullet points or numbered lists for steps, not tables
+            
+        Formatting:
+        - Use **bold** for key concepts and terms
+        - Use numbered lists for step-by-step processes
+        - Use bullet points for explanations and examples
+        """
+        
+        # Add common guidelines for all assignment types
+        common_guidelines = """
+        
+        After providing your response, generate 3-4 relevant follow-up questions that the user might want to ask.
+        Format these questions as a JSON array at the very end of your response, like this:
+        ["Question 1?", "Question 2?", "Question 3?"]
+        
+        IMPORTANT: Do NOT include any text like "Follow-up Questions (JSON)" or "```json" before the JSON array.
+        Simply end your response with the JSON array directly.
+        
+        CRITICAL: No tables in your response. Use lists and paragraphs instead."""
+        
+        system_prompt += common_guidelines
+        
+        messages.append({"role": "system", "content": system_prompt})
+        
+        # Add the user's question if provided
+        if request.question:
+            messages.append({"role": "user", "content": request.question})
+        else:
+            # If no question is provided, create a default request for help
+            default_question = f"I need help with my {request.assignment_type} assignment about {request.topic} in {request.subject}. Can you guide me through it?"
+            messages.append({"role": "user", "content": default_question})
+        
+        # Use the ai_service to generate the response
+        payload = {
+            "model": ai_service.model,
+            "messages": messages,
+            "temperature": 0.7,
+            "max_tokens": 1500  # Increased to accommodate suggested questions
+        }
+        
+        # Make the API call using the existing ai_service infrastructure
+        import httpx
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            try:
+                response = await client.post(
+                    ai_service.api_url,
+                    headers=ai_service.headers,
+                    json=payload
+                )
+                response.raise_for_status()
+                response_data = response.json()
+                
+                # Extract the response content
+                if "choices" in response_data and len(response_data["choices"]) > 0:
+                    full_response = response_data["choices"][0]["message"]["content"]
+                else:
+                    raise HTTPException(
+                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        detail="Invalid response format from LLM"
+                    )
+                
+                # Extract suggested questions from the response
+                suggested_questions = []
+                try:
+                    # Look for JSON array at the end of the response with various patterns
+                    patterns = [
+                        r'```json\s*(\[\s*"[^"]*"(?:\s*,\s*"[^"]*")*\s*\])\s*```',  # JSON in code blocks
+                        r'```\s*(\[\s*"[^"]*"(?:\s*,\s*"[^"]*")*\s*\])\s*```',      # JSON in generic code blocks
+                        r'Follow-up Questions \(JSON\)\s*\n\s*```\s*json\s*(\[\s*"[^"]*"(?:\s*,\s*"[^"]*")*\s*\])\s*```',  # With heading
+                        r'Follow-up Questions\s*\n\s*```\s*json\s*(\[\s*"[^"]*"(?:\s*,\s*"[^"]*")*\s*\])\s*```',  # With shorter heading
+                        r'(\[\s*"[^"]*"(?:\s*,\s*"[^"]*")*\s*\])$'  # JSON at the end
+                    ]
+                    
+                    json_match = None
+                    for pattern in patterns:
+                        json_match = re.search(pattern, full_response, re.DOTALL)
+                        if json_match:
+                            break
+                    
+                    if json_match:
+                        # Extract the JSON part (group 1 for patterns with capturing groups)
+                        questions_json = json_match.group(1) if json_match.groups() else json_match.group(0)
+                        suggested_questions = json.loads(questions_json)
+                        
+                        # Remove the JSON part and any related headings from the response
+                        content = full_response[:json_match.start()].strip()
+                        
+                        # Remove common headings that might precede the JSON
+                        content = re.sub(r'Follow-up Questions\s*\(JSON\)\s*$', '', content, flags=re.IGNORECASE | re.MULTILINE)
+                        content = re.sub(r'Follow-up Questions\s*$', '', content, flags=re.IGNORECASE | re.MULTILINE)
+                        content = re.sub(r'Followup Questions\s*$', '', content, flags=re.IGNORECASE | re.MULTILINE)
+                        
+                        # Remove any trailing horizontal rules or separators
+                        content = re.sub(r'---\s*$', '', content, flags=re.MULTILINE)
+                        content = content.strip()
+                    else:
+                        content = full_response
+                except (json.JSONDecodeError, AttributeError) as e:
+                    print(f"Error parsing suggested questions: {e}")
+                    content = full_response
+                
+                # Generate IDs for the response
+                message_id = str(uuid.uuid4())
+                timestamp = datetime.now().isoformat()
+                
+                # Store the AI's response in the database
+                ai_message = Message(
+                    chat_session_id=chat_session_id,
+                    content=content,
+                    sender_type=SenderType.AI,
+                    suggested_questions=suggested_questions
+                )
+                db.add(ai_message)
+                db.commit()
+                
+                return HomeworkAssistantResponse(
+                    id=message_id,
+                    chat_session_id=str(chat_session_id),  # Convert UUID to string
+                    content=content,
+                    sender_type="ai",
+                    timestamp=timestamp,
+                    suggested_questions=suggested_questions
+                )
+                
+            except httpx.HTTPStatusError as e:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=f"LLM API error: {e.response.status_code}"
+                )
+            except httpx.RequestError as e:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=f"Request error: {str(e)}"
+                )
+            except Exception as e:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=f"Unexpected error: {str(e)}"
+                )
+                
+    except Exception as e:
+        import traceback
+        error_detail = f"Error generating homework assistant response: {str(e)}\n{traceback.format_exc()}"
+        print(error_detail)  # Log to console
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error generating homework assistant response: {str(e)}"
+        )

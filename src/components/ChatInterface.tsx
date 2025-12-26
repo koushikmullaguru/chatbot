@@ -3,6 +3,7 @@ import { Send, Paperclip, Mic, Search, Menu, X, Moon, Sun, ChevronLeft, Home, Us
 import { ModeSelector } from './ModeSelector';
 import { ExamSetup } from './ExamSetup';
 import { HomeworkSetup } from './HomeworkSetup';
+import { HomeworkMode } from './HomeworkMode';
 import { RevisionSetup } from './RevisionSetup';
 import { AssessmentSetup, AssessmentConfig } from './AssessmentSetup';
 import { AssessmentMode } from './AssessmentMode';
@@ -570,6 +571,15 @@ export function ChatInterface({ user, selectedProfile, onSwitchProfile, onLogout
                   createdAt: new Date().toISOString().split('T')[0]
                 };
                 setPlannerTasks([...plannerTasks, newTask]);
+              }}
+              isDark={theme === 'dark'}
+            />
+          ) : currentMode === 'homework' && homeworkTopic ? (
+            <HomeworkMode 
+              homeworkConfig={homeworkTopic}
+              onBack={() => {
+                setHomeworkTopic(null);
+                setShowModeSetup(true);
               }}
               isDark={theme === 'dark'}
             />
