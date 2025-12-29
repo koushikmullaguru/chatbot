@@ -85,7 +85,7 @@ export interface RevisionTopic {
 export interface ExamConfig {
   examType: string;
   subject: string;
-  topic: string;
+  chapter: string;
   difficulty: string;
   duration: number;
   questionCount: number;

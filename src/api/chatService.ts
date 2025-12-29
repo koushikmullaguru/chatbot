@@ -62,6 +62,23 @@ export interface HomeworkAssistantResponse {
   suggested_questions?: string[];
 }
 
+export interface ExamPrepRequest {
+  exam_type: string;
+  subject: string;
+  chapter: string;
+  difficulty: string;
+  question?: string;
+}
+
+export interface ExamPrepResponse {
+  id: string;
+  chat_session_id: string;
+  content: string;
+  sender_type: string;
+  timestamp: string;
+  suggested_questions?: string[];
+}
+
 // Chat API service
 export const chatService = {
   // Get all chat sessions for the current user
@@ -100,5 +117,10 @@ export const chatService = {
   // Homework Assistant endpoint - get specialized help based on assignment type
   homeworkAssistant: async (homeworkData: HomeworkAssistantRequest): Promise<HomeworkAssistantResponse> => {
     return apiService.post<HomeworkAssistantResponse>('/llm/homework-assistant', homeworkData);
+  },
+
+  // Exam Preparation endpoint - get specialized help based on exam type
+  examPrep: async (examData: ExamPrepRequest): Promise<ExamPrepResponse> => {
+    return apiService.post<ExamPrepResponse>('/llm/exam-prep', examData);
   }
 };

@@ -556,6 +556,8 @@ export function ChatInterface({ user, selectedProfile, onSwitchProfile, onLogout
                 setPlannerTasks([...plannerTasks, newTask]);
               }}
               isDark={theme === 'dark'}
+              user={user}
+              selectedProfile={selectedProfile}
             />
           ) : currentMode === 'exam' && examConfig ? (
             <ExamMode config={examConfig} onComplete={handleNewChat} />

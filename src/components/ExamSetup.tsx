@@ -1,11 +1,13 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { BookOpen, FileText, Target, Clock, ArrowRight, Zap, Calendar } from 'lucide-react';
 import { AddToPlannerButton } from './AddToPlannerButton';
+import { academicService, Class, Subject, Chapter } from '../api/academicService';
+import { User } from '../types';
 
 interface ExamConfig {
   examType: string;
   subject: string;
-  topic: string;
+  chapter: string;
   difficulty: string;
   duration: number;
   questionCount: number;
@@ -28,13 +30,150 @@ interface ExamSetupProps {
   onStartExam: (config: ExamConfig) => void;
   onAddTask?: (task: Omit<Task, 'id' | 'createdAt'>) => void;
   isDark?: boolean;
+  user?: User;
+  selectedProfile?: any;
 }
 
-export function ExamSetup({ onStartExam, onAddTask, isDark = false }: ExamSetupProps) {
+export function ExamSetup({ onStartExam, onAddTask, isDark = false, user, selectedProfile }: ExamSetupProps) {
   const [selectedExamType, setSelectedExamType] = useState('');
   const [selectedSubject, setSelectedSubject] = useState('');
-  const [selectedTopic, setSelectedTopic] = useState('');
+  const [selectedChapter, setSelectedChapter] = useState('');
   const [selectedDifficulty, setSelectedDifficulty] = useState('');
+  
+  // Data from backend
+  const [classes, setClasses] = useState<Class[]>([]);
+  const [subjects, setSubjects] = useState<Subject[]>([]);
+  const [chapters, setChapters] = useState<Chapter[]>([]);
+  
+  // Loading states
+  const [loadingClasses, setLoadingClasses] = useState(true);
+  const [loadingSubjects, setLoadingSubjects] = useState(false);
+  const [loadingChapters, setLoadingChapters] = useState(false);
+
+  // Fetch classes on component mount
+  useEffect(() => {
+    const fetchClasses = async () => {
+      try {
+        setLoadingClasses(true);
+        const classesData = await academicService.getClasses();
+        setClasses(classesData);
+      } catch (error) {
+        console.error('Error fetching classes:', error);
+        // Fallback to default classes if API fails
+        setClasses([
+          { id: '1', name: '6th Grade' },
+          { id: '2', name: '7th Grade' },
+          { id: '3', name: '8th Grade' },
+          { id: '4', name: '9th Grade' },
+          { id: '5', name: '10th Grade' },
+          { id: '6', name: '11th Grade' },
+          { id: '7', name: '12th Grade' }
+        ]);
+      } finally {
+        setLoadingClasses(false);
+      }
+    };
+
+    fetchClasses();
+  }, []);
+
+  // Fetch subjects when a class is selected
+  useEffect(() => {
+    const fetchSubjects = async () => {
+      if (!selectedExamType) {
+        setSubjects([]);
+        return;
+      }
+
+      try {
+        setLoadingSubjects(true);
+        
+        // Get the user's class or use the first class as fallback
+        let userClassId = '';
+        const userGrade = selectedProfile?.grade || user?.grade || user?.normalized_grade;
+        
+        if (userGrade) {
+          // Find the class that matches the user's grade
+          const userClass = classes.find(cls => 
+            cls.name.toLowerCase().includes(userGrade.toLowerCase()) ||
+            cls.name.replace(/\s+/g, '').toLowerCase().includes(userGrade.toLowerCase())
+          );
+          if (userClass) {
+            userClassId = userClass.id;
+          }
+        }
+        
+        // If no user class found, use the first class as fallback
+        if (!userClassId && classes.length > 0) {
+          userClassId = classes[0].id;
+        }
+        
+        // If still no class ID, use a default
+        if (!userClassId) {
+          userClassId = '1';
+        }
+        
+        const subjectsData = await academicService.getSubjects(userClassId);
+        setSubjects(subjectsData);
+      } catch (error) {
+        console.error('Error fetching subjects:', error);
+        // Fallback to default subjects if API fails
+        setSubjects([
+          { id: '1', name: 'Mathematics', class_id: '1' },
+          { id: '2', name: 'Science', class_id: '1' },
+          { id: '3', name: 'English', class_id: '1' },
+          { id: '4', name: 'History', class_id: '1' },
+          { id: '5', name: 'Geography', class_id: '1' },
+          { id: '6', name: 'Computer Science', class_id: '1' }
+        ]);
+      } finally {
+        setLoadingSubjects(false);
+      }
+    };
+
+    fetchSubjects();
+  }, [selectedExamType, classes, user, selectedProfile]);
+
+  // Fetch chapters when a subject is selected
+  useEffect(() => {
+    const fetchChapters = async () => {
+      if (!selectedSubject) {
+        setChapters([]);
+        return;
+      }
+
+      try {
+        setLoadingChapters(true);
+        const chaptersData = await academicService.getChapters(selectedSubject);
+        setChapters(chaptersData);
+      } catch (error) {
+        console.error('Error fetching chapters:', error);
+        // Fallback to default chapters if API fails
+        const subjectChapters: Record<string, Chapter[]> = {
+          '1': [ // Mathematics
+            { id: '1', name: 'Number Systems', subject_id: '1' },
+            { id: '2', name: 'Algebra', subject_id: '1' },
+            { id: '3', name: 'Geometry', subject_id: '1' },
+            { id: '4', name: 'Mensuration', subject_id: '1' },
+            { id: '5', name: 'Statistics', subject_id: '1' }
+          ],
+          '2': [ // Science
+            { id: '6', name: 'Matter in Our Surroundings', subject_id: '2' },
+            { id: '7', name: 'Is Matter Around Us Pure', subject_id: '2' },
+            { id: '8', name: 'Atoms and Molecules', subject_id: '2' },
+            { id: '9', name: 'Structure of the Atom', subject_id: '2' },
+            { id: '10', name: 'The Fundamental Unit of Life', subject_id: '2' }
+          ]
+          // Add more subjects as needed
+        };
+        setChapters(subjectChapters[selectedSubject] || []);
+      } finally {
+        setLoadingChapters(false);
+      }
+    };
+
+    fetchChapters();
+  }, [selectedSubject]);
 
   const examTypes = [
     {
@@ -87,158 +226,23 @@ export function ExamSetup({ onStartExam, onAddTask, isDark = false }: ExamSetupP
     },
   ];
 
-  const subjects = [
-    'Mathematics',
-    'Physics',
-    'Chemistry',
-    'Biology',
-    'English',
-    'History',
-    'Geography',
-    'Computer Science',
-    'Economics',
-    'Political Science',
-  ];
-
-  const topicsBySubject: Record<string, string[]> = {
-    'Mathematics': [
-      'Algebra - Linear Equations',
-      'Algebra - Quadratic Equations',
-      'Geometry - Triangles',
-      'Geometry - Circles',
-      'Trigonometry',
-      'Calculus - Derivatives',
-      'Calculus - Integrals',
-      'Statistics & Probability',
-      'Coordinate Geometry',
-      'Number Systems',
-    ],
-    'Physics': [
-      'Mechanics - Motion & Forces',
-      'Mechanics - Work & Energy',
-      'Electricity & Magnetism',
-      'Optics',
-      'Thermodynamics',
-      'Modern Physics',
-      'Waves & Sound',
-      'Gravitation',
-      'Atomic Structure',
-      'Electronics',
-    ],
-    'Chemistry': [
-      'Atomic Structure',
-      'Chemical Bonding',
-      'Periodic Table',
-      'Acids, Bases & Salts',
-      'Organic Chemistry',
-      'Inorganic Chemistry',
-      'Physical Chemistry',
-      'Electrochemistry',
-      'Chemical Kinetics',
-      'Thermochemistry',
-    ],
-    'Biology': [
-      'Cell Biology',
-      'Genetics & Evolution',
-      'Plant Physiology',
-      'Human Anatomy',
-      'Ecology & Environment',
-      'Biotechnology',
-      'Reproduction',
-      'Microorganisms',
-      'Photosynthesis',
-      'Nervous System',
-    ],
-    'English': [
-      'Grammar - Tenses',
-      'Grammar - Voice',
-      'Vocabulary',
-      'Comprehension',
-      'Essay Writing',
-      'Poetry Analysis',
-      'Literature',
-      'Letter Writing',
-      'Speech & Drama',
-      'Creative Writing',
-    ],
-    'History': [
-      'Ancient History',
-      'Medieval History',
-      'Modern History',
-      'World War I',
-      'World War II',
-      'Indian Independence',
-      'Cold War Era',
-      'French Revolution',
-      'Industrial Revolution',
-      'Renaissance Period',
-    ],
-    'Geography': [
-      'Physical Geography',
-      'Climate & Weather',
-      'Natural Resources',
-      'Agriculture',
-      'Population Studies',
-      'Map Reading',
-      'Environmental Issues',
-      'Continents & Oceans',
-      'Mountain Ranges',
-      'River Systems',
-    ],
-    'Computer Science': [
-      'Programming Basics',
-      'Data Structures',
-      'Algorithms',
-      'Database Management',
-      'Computer Networks',
-      'Operating Systems',
-      'Web Development',
-      'Object-Oriented Programming',
-      'Artificial Intelligence',
-      'Cybersecurity',
-    ],
-    'Economics': [
-      'Microeconomics',
-      'Macroeconomics',
-      'Demand & Supply',
-      'Market Structures',
-      'National Income',
-      'Money & Banking',
-      'International Trade',
-      'Public Finance',
-      'Economic Development',
-      'Consumer Behavior',
-    ],
-    'Political Science': [
-      'Constitution',
-      'Fundamental Rights',
-      'Political Theories',
-      'Democracy',
-      'Elections & Voting',
-      'Government Structure',
-      'International Relations',
-      'Political Parties',
-      'Federalism',
-      'Judiciary',
-    ],
-  };
-
   const difficulties = [
     { id: 'easy', name: 'Easy', description: 'Basic concepts', color: 'bg-green-500' },
     { id: 'medium', name: 'Medium', description: 'Moderate difficulty', color: 'bg-yellow-500' },
     { id: 'hard', name: 'Hard', description: 'Advanced level', color: 'bg-red-500' },
   ];
 
-  const topics = selectedSubject ? (topicsBySubject[selectedSubject] || []) : [];
   const selectedExamTypeData = examTypes.find(e => e.id === selectedExamType);
+  const selectedSubjectName = subjects.find(s => s.id === selectedSubject)?.name || '';
+  const selectedChapterName = chapters.find(c => c.id === selectedChapter)?.name || '';
 
   const handleStartExam = () => {
-    if (selectedExamType && selectedSubject && selectedTopic && selectedDifficulty) {
+    if (selectedExamType && selectedSubject && selectedChapter && selectedDifficulty) {
       const examTypeData = examTypes.find(e => e.id === selectedExamType)!;
       onStartExam({
         examType: selectedExamType,
-        subject: selectedSubject,
-        topic: selectedTopic,
+        subject: selectedSubjectName,
+        chapter: selectedChapterName,
         difficulty: selectedDifficulty,
         duration: examTypeData.duration,
         questionCount: examTypeData.questions,
@@ -278,7 +282,7 @@ export function ExamSetup({ onStartExam, onAddTask, isDark = false }: ExamSetupP
                   onClick={() => {
                     setSelectedExamType(examType.id);
                     setSelectedSubject('');
-                    setSelectedTopic('');
+                    setSelectedChapter('');
                     setSelectedDifficulty('');
                   }}
                   className={`p-4 rounded-xl border-2 transition-all text-left group hover:shadow-lg ${
@@ -322,28 +326,32 @@ export function ExamSetup({ onStartExam, onAddTask, isDark = false }: ExamSetupP
                 </div>
               </div>
               <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-                {subjects.map((subject) => (
-                  <button
-                    key={subject}
-                    onClick={() => {
-                      setSelectedSubject(subject);
-                      setSelectedTopic('');
-                      setSelectedDifficulty('');
-                    }}
-                    className={`p-4 rounded-xl border-2 transition-all ${
-                      selectedSubject === subject
-                        ? 'border-pink-500 bg-pink-50 dark:bg-pink-900/20'
-                        : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700/50'
-                    }`}
-                  >
-                    <div className="text-sm dark:text-white">{subject}</div>
-                  </button>
-                ))}
+                {loadingSubjects ? (
+                  <div className="col-span-full text-center py-4">Loading subjects...</div>
+                ) : (
+                  subjects.map((subject) => (
+                    <button
+                      key={subject.id}
+                      onClick={() => {
+                        setSelectedSubject(subject.id);
+                        setSelectedChapter('');
+                        setSelectedDifficulty('');
+                      }}
+                      className={`p-4 rounded-xl border-2 transition-all ${
+                        selectedSubject === subject.id
+                          ? 'border-pink-500 bg-pink-50 dark:bg-pink-900/20'
+                          : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700/50'
+                      }`}
+                    >
+                      <div className="text-sm dark:text-white">{subject.name}</div>
+                    </button>
+                  ))
+                )}
               </div>
             </div>
           )}
 
-          {/* Step 3: Select Topic */}
+          {/* Step 3: Select Chapter */}
           {selectedSubject && (
             <div className="animate-fadeIn">
               <div className="flex items-center justify-between mb-4">
@@ -352,14 +360,14 @@ export function ExamSetup({ onStartExam, onAddTask, isDark = false }: ExamSetupP
                     <Target className="w-6 h-6 text-indigo-600 dark:text-indigo-400" />
                   </div>
                   <div>
-                    <h3 className="text-xl dark:text-white">Step 3: Select Topic</h3>
-                    <p className="text-sm text-gray-500 dark:text-gray-400">Pick the specific topic to focus on</p>
+                    <h3 className="text-xl dark:text-white">Step 3: Select Chapter</h3>
+                    <p className="text-sm text-gray-500 dark:text-gray-400">Pick the specific chapter to focus on</p>
                   </div>
                 </div>
-                {selectedTopic && onAddTask && (
+                {selectedChapter && onAddTask && (
                   <AddToPlannerButton
-                    subject={selectedSubject}
-                    topic={selectedTopic}
+                    subject={selectedSubjectName}
+                    topic={selectedChapterName}
                     onAddTask={(task) => {
                       onAddTask(task);
                       alert('Task added to your planner! View it by clicking the Planner button in the header.');
@@ -369,28 +377,32 @@ export function ExamSetup({ onStartExam, onAddTask, isDark = false }: ExamSetupP
                 )}
               </div>
               <div className="grid md:grid-cols-2 gap-3">
-                {topics.map((topic) => (
-                  <button
-                    key={topic}
-                    onClick={() => {
-                      setSelectedTopic(topic);
-                      setSelectedDifficulty('');
-                    }}
-                    className={`p-3 rounded-xl border-2 transition-all text-left ${
-                      selectedTopic === topic
-                        ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20'
-                        : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700/50'
-                    }`}
-                  >
-                    <div className="text-sm dark:text-white">{topic}</div>
-                  </button>
-                ))}
+                {loadingChapters ? (
+                  <div className="col-span-full text-center py-4">Loading chapters...</div>
+                ) : (
+                  chapters.map((chapter) => (
+                    <button
+                      key={chapter.id}
+                      onClick={() => {
+                        setSelectedChapter(chapter.id);
+                        setSelectedDifficulty('');
+                      }}
+                      className={`p-3 rounded-xl border-2 transition-all text-left ${
+                        selectedChapter === chapter.id
+                          ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20'
+                          : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700/50'
+                      }`}
+                    >
+                      <div className="text-sm dark:text-white">{chapter.name}</div>
+                    </button>
+                  ))
+                )}
               </div>
             </div>
           )}
 
           {/* Step 4: Select Difficulty */}
-          {selectedTopic && (
+          {selectedChapter && (
             <div className="animate-fadeIn">
               <div className="flex items-center gap-3 mb-4">
                 <div className="w-10 h-10 bg-orange-100 dark:bg-orange-900/30 rounded-lg flex items-center justify-center">
@@ -435,11 +447,11 @@ export function ExamSetup({ onStartExam, onAddTask, isDark = false }: ExamSetupP
                   </div>
                   <div>
                     <span className="text-gray-600 dark:text-gray-400">Subject:</span>
-                    <span className="ml-2 dark:text-white">{selectedSubject}</span>
+                    <span className="ml-2 dark:text-white">{selectedSubjectName}</span>
                   </div>
                   <div>
-                    <span className="text-gray-600 dark:text-gray-400">Topic:</span>
-                    <span className="ml-2 dark:text-white">{selectedTopic}</span>
+                    <span className="text-gray-600 dark:text-gray-400">Chapter:</span>
+                    <span className="ml-2 dark:text-white">{selectedChapterName}</span>
                   </div>
                   <div>
                     <span className="text-gray-600 dark:text-gray-400">Difficulty:</span>
